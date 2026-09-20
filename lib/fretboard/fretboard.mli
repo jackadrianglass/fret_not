@@ -31,6 +31,25 @@ val positions_in_window :
     filtering by hand, this can't silently miss positions on a wide neck or an
     unusual tuning. Sorted by (string_index, fret). *)
 
+val pentatonic_degrees : key:Key.t -> Scale_degree.t list
+(** This key's own pentatonic scale degrees (major pentatonic for a Major key,
+    minor pentatonic for a Minor one) - see Pentatonic. Degree numbers are the
+    original 1-7 from the full diatonic scale, just filtered down to 5, not
+    renumbered. *)
+
+val pentatonic_positions_in_window :
+     key:Key.t
+  -> tuning:Tuning.t
+  -> anchor_position:Fretboard_position.t
+  -> min_fret:int
+  -> max_fret:int
+  -> Fretboard_position.t list
+(** Same contract as positions_in_window, restricted to this key's own
+    pentatonic scale (major pentatonic for a Major key, minor pentatonic for a
+    Minor one - see Pentatonic) instead of all 7 diatonic degrees. No ~mode
+    parameter: pentatonic-major/minor aren't independently selectable the way
+    the 7 diatonic modes are. *)
+
 val three_notes_per_string_positions :
   key:Key.t -> mode:Mode.t -> tuning:Tuning.t -> Fretboard_position.t list list
 (** The 7 "3-notes-per-string" mode positions for this key, one flat list of
@@ -46,6 +65,16 @@ val three_notes_per_string_positions :
     class is unaffected by octave, so this doesn't change which mode it is) to
     sit at its own lowest playable spot - unlike to_positions/
     positions_in_window, not unbounded. *)
+
+val two_notes_per_string_positions :
+  key:Key.t -> tuning:Tuning.t -> Fretboard_position.t list list
+(** The 5 pentatonic "2-notes-per-string" positions for this key's own
+    pentatonic scale (major pentatonic for a Major key, minor pentatonic for a
+    Minor one), one flat list of Fretboard_position.t per position - otherwise
+    the same shape and chaining/octave-drop contract as
+    three_notes_per_string_positions, sized for 2 notes/string and 5 positions
+    (one octave of the 5-note pentatonic scale) instead of 3 and 7. No ~mode
+    parameter, for the same reason as pentatonic_positions_in_window. *)
 
 val of_position :
      key:Key.t

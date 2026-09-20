@@ -19,7 +19,7 @@ _Seeing a key or mode laid out across the whole neck, with the controls that mak
 
 - Mode switch UI: mode currently follows Major/Minor quality automatically (Ionian/Aeolian) — exposing all 7 diatonic modes as their own live control is still open, deliberately deferred out of `worklog/01-live-key-picker`.
 - Tuning switch UI: tuning is fixed at standard for now; switching it live (drop D, 7-string, etc.) reflected on the overlay is still open.
-- Notes-per-string subset recipes: built-in 3/2/1-notes-per-string overlays on the full Key+Mode view — feeds the generalized recipe model below.
+- Notes-per-string subset recipes: a built-in 1-note-per-string overlay on the full Key+Mode view (3 and 2 notes/string landed in `worklog/03-three-notes-per-string-positions/` and `worklog/04-pentatonic-two-notes-per-string-positions/`) — feeds the generalized recipe model below.
 
 ## Exercise Subsets
 

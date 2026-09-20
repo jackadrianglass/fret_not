@@ -209,6 +209,108 @@ let positions_land_on_modes_in_sequential_order () =
     (List.map positions ~f:position_mode_name)
 ;;
 
+let two_notes_per_string_positions_are_five_of_twelve () =
+  let positions =
+    Fretboard.two_notes_per_string_positions ~key:c_major
+      ~tuning:Tuning.standard
+  in
+  Alcotest.(check int) "five positions" 5 (List.length positions);
+  List.iter positions ~f:(fun position ->
+      Alcotest.(check int) "12 notes (6 strings x 2)" 12 (List.length position))
+;;
+
+let pentatonic_position_one_matches_the_known_c_major_shape () =
+  let positions =
+    Fretboard.two_notes_per_string_positions ~key:c_major
+      ~tuning:Tuning.standard
+  in
+  let position_one = List.hd_exn positions in
+  Alcotest.(check (list (pair int int)))
+    "C major pentatonic position 1"
+    [ (0, 8)
+    ; (0, 10)
+    ; (1, 7)
+    ; (1, 10)
+    ; (2, 7)
+    ; (2, 10)
+    ; (3, 7)
+    ; (3, 9)
+    ; (4, 8)
+    ; (4, 10)
+    ; (5, 8)
+    ; (5, 10)
+    ]
+    (List.map position_one ~f:(fun (p : Fretboard_position.t) ->
+         (p.string_index, p.fret)))
+;;
+
+let pentatonic_positions_chain_by_one_shared_low_string_note () =
+  let positions =
+    Fretboard.two_notes_per_string_positions ~key:c_major
+      ~tuning:Tuning.standard
+  in
+  List.iter
+    (List.zip_exn (List.drop_last_exn positions) (List.tl_exn positions))
+    ~f:(fun (position, next_position) ->
+      let low_string_of p =
+        List.filter p ~f:(fun (pos : Fretboard_position.t) ->
+            pos.string_index = 0)
+      in
+      let last_note_of_position = List.last_exn (low_string_of position) in
+      let first_note_of_next = List.hd_exn (low_string_of next_position) in
+      Alcotest.(check bool)
+        "next position's low string starts at the previous position's last \
+         low-string note (same pitch class)"
+        true
+        (Pitch_class.equal
+           (Tuning.pitch_class_at Tuning.standard
+              ~string_index:last_note_of_position.string_index
+              ~fret:last_note_of_position.fret)
+           (Tuning.pitch_class_at Tuning.standard
+              ~string_index:first_note_of_next.string_index
+              ~fret:first_note_of_next.fret)))
+;;
+
+let every_pentatonic_position_stays_within_a_playable_octave () =
+  let positions =
+    Fretboard.two_notes_per_string_positions ~key:c_major
+      ~tuning:Tuning.standard
+  in
+  List.iter positions ~f:(fun position ->
+      let frets =
+        List.map position ~f:(fun (p : Fretboard_position.t) -> p.fret)
+      in
+      let min_fret =
+        List.min_elt frets ~compare:Int.compare |> Option.value_exn
+      in
+      Alcotest.(check bool)
+        "lowest fret in each pentatonic position is within the first octave"
+        true
+        (min_fret >= 0 && min_fret < 12))
+;;
+
+let pentatonic_positions_in_window_covers_only_five_pitch_classes () =
+  let positions =
+    Fretboard.pentatonic_positions_in_window ~key:c_major
+      ~tuning:Tuning.standard ~anchor_position:anchor_open_low_e ~min_fret:0
+      ~max_fret:12
+  in
+  let pitch_classes =
+    List.map positions ~f:(fun (p : Fretboard_position.t) ->
+        Tuning.pitch_class_at Tuning.standard ~string_index:p.string_index
+          ~fret:p.fret)
+    |> List.dedup_and_sort ~compare:Pitch_class.compare
+  in
+  let expected_pitch_classes =
+    Fretboard.pentatonic_degrees ~key:c_major
+    |> List.map ~f:(fun (d : Scale_degree.t) -> d.pitch_class)
+    |> List.dedup_and_sort ~compare:Pitch_class.compare
+  in
+  Alcotest.(check bool)
+    "positions in window only ever land on the 5 pentatonic pitch classes" true
+    (List.equal Pitch_class.equal pitch_classes expected_pitch_classes)
+;;
+
 let tests =
   [ Alcotest.test_case "octave 0 unreachable near open low E" `Quick
       degree_one_octave_zero_is_unreachable_near_open_low_e
@@ -232,5 +334,18 @@ let tests =
       `Quick position_three_is_dropped_to_its_lowest_playable_octave
   ; Alcotest.test_case "every position stays within a playable octave" `Quick
       every_position_stays_within_a_playable_octave
+  ; Alcotest.test_case "two_notes_per_string_positions are five of twelve"
+      `Quick two_notes_per_string_positions_are_five_of_twelve
+  ; Alcotest.test_case "pentatonic position 1 matches the known C major shape"
+      `Quick pentatonic_position_one_matches_the_known_c_major_shape
+  ; Alcotest.test_case
+      "pentatonic positions chain by one shared low-string note" `Quick
+      pentatonic_positions_chain_by_one_shared_low_string_note
+  ; Alcotest.test_case
+      "every pentatonic position stays within a playable octave" `Quick
+      every_pentatonic_position_stays_within_a_playable_octave
+  ; Alcotest.test_case
+      "pentatonic_positions_in_window covers only five pitch classes" `Quick
+      pentatonic_positions_in_window_covers_only_five_pitch_classes
   ]
 ;;

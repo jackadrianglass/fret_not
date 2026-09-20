@@ -31,11 +31,10 @@ let nearest_occurrence tuning ~(anchor_position : Fretboard_position.t)
   if up_step <= 6 then anchor + up_step else anchor + up_step - 12
 ;;
 
-let to_positions ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)
-    (dr : Degree_reference.t) =
-  let pitch_class = target_pitch_class ~key ~mode dr in
+let positions_for_pitch_class tuning ~(anchor_position : Fretboard_position.t)
+    ~pitch_class ~octave =
   let target =
-    nearest_occurrence tuning ~anchor_position ~pitch_class + (12 * dr.octave)
+    nearest_occurrence tuning ~anchor_position ~pitch_class + (12 * octave)
   in
   List.init (Tuning.string_count tuning) ~f:Fn.id
   |> List.filter_map ~f:(fun string_index ->
@@ -49,14 +48,26 @@ let to_positions ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)
            (Int.abs (b.fret - anchor_position.fret)))
 ;;
 
+let to_positions ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)
+    (dr : Degree_reference.t) =
+  let pitch_class = target_pitch_class ~key ~mode dr in
+  positions_for_pitch_class tuning ~anchor_position ~pitch_class
+    ~octave:dr.octave
+;;
+
 (* `/` truncates toward zero, so a plain a/b would round the wrong way for
    negative octave bounds; these stay exact because a % b (Base's %, always
    same sign as b) makes the subtraction land on a multiple of b first. *)
 let floor_div a b = (a - (a % b)) / b
 let ceil_div a b = -(floor_div (-a) b)
 
-let positions_in_window ~key ~mode ~tuning
-    ~(anchor_position : Fretboard_position.t) ~min_fret ~max_fret =
+(* Takes the target degrees' own Scale_degree.t (pitch class already
+   resolved) rather than degree numbers, so a filtered subset (e.g.
+   pentatonic's 5 degrees) can't be mis-indexed the way
+   target_pitch_class's `degree - 1` lookup would if handed one. *)
+let positions_in_window_for_degrees tuning
+    ~(anchor_position : Fretboard_position.t) ~min_fret ~max_fret
+    (degrees : Scale_degree.t list) =
   let last_string = Tuning.string_count tuning - 1 in
   let min_semitone =
     Tuning.relative_semitone tuning ~string_index:0 ~fret:min_fret
@@ -64,25 +75,41 @@ let positions_in_window ~key ~mode ~tuning
   let max_semitone =
     Tuning.relative_semitone tuning ~string_index:last_string ~fret:max_fret
   in
-  List.concat_map [ 1; 2; 3; 4; 5; 6; 7 ] ~f:(fun degree ->
-      let pitch_class =
-        target_pitch_class ~key ~mode
-          { Degree_reference.degree; octave = 0; alteration = 0 }
+  List.concat_map degrees ~f:(fun (d : Scale_degree.t) ->
+      let base =
+        nearest_occurrence tuning ~anchor_position ~pitch_class:d.pitch_class
       in
-      let base = nearest_occurrence tuning ~anchor_position ~pitch_class in
       let octave_lo = floor_div (min_semitone - base) 12 in
       let octave_hi = ceil_div (max_semitone - base) 12 in
       List.concat_map
         (List.range octave_lo (octave_hi + 1))
         ~f:(fun octave ->
-          to_positions ~key ~mode ~tuning ~anchor_position
-            { Degree_reference.degree; octave; alteration = 0 }))
+          positions_for_pitch_class tuning ~anchor_position
+            ~pitch_class:d.pitch_class ~octave))
   |> List.filter ~f:(fun (p : Fretboard_position.t) ->
       p.fret >= min_fret && p.fret <= max_fret)
   |> List.sort ~compare:(fun (a : Fretboard_position.t) b ->
       match Int.compare a.string_index b.string_index with
       | 0 -> Int.compare a.fret b.fret
       | c -> c)
+;;
+
+let positions_in_window ~key ~mode ~tuning ~anchor_position ~min_fret ~max_fret
+    =
+  positions_in_window_for_degrees tuning ~anchor_position ~min_fret ~max_fret
+    (mode_degrees ~key ~mode)
+;;
+
+let pentatonic_degrees ~key =
+  match Key.quality key with
+  | Key.Major -> Pentatonic.major ~root:(Key.tonic key)
+  | Key.Minor -> Pentatonic.minor ~root:(Key.tonic key)
+;;
+
+let pentatonic_positions_in_window ~key ~tuning ~anchor_position ~min_fret
+    ~max_fret =
+  positions_in_window_for_degrees tuning ~anchor_position ~min_fret ~max_fret
+    (pentatonic_degrees ~key)
 ;;
 
 let rec ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
@@ -103,22 +130,23 @@ let rec ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
         ~min_relative_semitone ~count ~fret:(fret + 1)
 ;;
 
-let three_ascending_diatonic_positions tuning ~diatonic_pitch_classes
-    ~string_index ~min_relative_semitone =
+let ascending_diatonic_positions tuning ~diatonic_pitch_classes ~string_index
+    ~min_relative_semitone ~count =
   let open_offset = Tuning.relative_semitone tuning ~string_index ~fret:0 in
   let start_fret = Int.max 0 (min_relative_semitone - open_offset) in
   ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
-    ~min_relative_semitone ~count:3 ~fret:start_fret
+    ~min_relative_semitone ~count ~fret:start_fret
 ;;
 
-let one_three_notes_per_string_position tuning ~diatonic_pitch_classes
-    ~string_count ~low_string_min_semitone =
+let one_notes_per_string_position tuning ~diatonic_pitch_classes
+    ~notes_per_string ~string_count ~low_string_min_semitone =
   let rec across_strings string_index min_semitone =
     if string_index = string_count then []
     else
       let notes =
-        three_ascending_diatonic_positions tuning ~diatonic_pitch_classes
+        ascending_diatonic_positions tuning ~diatonic_pitch_classes
           ~string_index ~min_relative_semitone:min_semitone
+          ~count:notes_per_string
       in
       let next_min_semitone =
         relative_semitone_of_position tuning (List.last_exn notes) + 1
@@ -139,36 +167,66 @@ let dropped_to_lowest_playable_octave position =
       { p with fret = p.fret - octave_drop })
 ;;
 
-let three_notes_per_string_positions ~key ~mode ~tuning =
-  let diatonic_pitch_classes =
-    List.map (mode_degrees ~key ~mode) ~f:(fun (d : Scale_degree.t) ->
-        d.pitch_class)
-  in
-  let string_count = Tuning.string_count tuning in
-  let root_pitch_class = Key.mode_root key mode in
+let relative_semitone_of_pitch_class tuning ~pitch_class =
   let open_string_pitch_class =
     Tuning.pitch_class_at tuning ~string_index:0 ~fret:0
   in
-  let root_relative_semitone =
-    (Pitch_class.to_int root_pitch_class
-    - Pitch_class.to_int open_string_pitch_class
-    + 12)
-    % 12
-  in
+  (Pitch_class.to_int pitch_class
+  - Pitch_class.to_int open_string_pitch_class
+  + 12)
+  % 12
+;;
+
+(* Walking one scale-degree per position always covers exactly one octave
+   of whichever scale is in play, so the position count is just how many
+   degrees the scale has - 7 for a full diatonic walk, 5 for pentatonic. *)
+let notes_per_string_positions ~notes_per_string ~diatonic_pitch_classes ~tuning
+    ~root_relative_semitone =
+  let string_count = Tuning.string_count tuning in
+  let position_count = List.length diatonic_pitch_classes in
   let rec positions remaining low_string_min_semitone =
     if remaining = 0 then []
     else
       let this_position =
-        one_three_notes_per_string_position tuning ~diatonic_pitch_classes
-          ~string_count ~low_string_min_semitone
+        one_notes_per_string_position tuning ~diatonic_pitch_classes
+          ~notes_per_string ~string_count ~low_string_min_semitone
       in
+      (* Index 1 is "one scale-step past the start" regardless of
+         notes_per_string - for 2 notes/string that's simply the low
+         string's last note, giving positions that share 1 of 2 low-string
+         notes (the analog of 3nps's "shares 2 of 3"). *)
       let next_low_string_min_semitone =
         relative_semitone_of_position tuning (List.nth_exn this_position 1)
       in
       dropped_to_lowest_playable_octave this_position
       :: positions (remaining - 1) next_low_string_min_semitone
   in
-  positions 7 root_relative_semitone
+  positions position_count root_relative_semitone
+;;
+
+let three_notes_per_string_positions ~key ~mode ~tuning =
+  let diatonic_pitch_classes =
+    List.map (mode_degrees ~key ~mode) ~f:(fun (d : Scale_degree.t) ->
+        d.pitch_class)
+  in
+  let root_relative_semitone =
+    relative_semitone_of_pitch_class tuning
+      ~pitch_class:(Key.mode_root key mode)
+  in
+  notes_per_string_positions ~notes_per_string:3 ~diatonic_pitch_classes ~tuning
+    ~root_relative_semitone
+;;
+
+let two_notes_per_string_positions ~key ~tuning =
+  let diatonic_pitch_classes =
+    List.map (pentatonic_degrees ~key) ~f:(fun (d : Scale_degree.t) ->
+        d.pitch_class)
+  in
+  let root_relative_semitone =
+    relative_semitone_of_pitch_class tuning ~pitch_class:(Key.tonic key)
+  in
+  notes_per_string_positions ~notes_per_string:2 ~diatonic_pitch_classes ~tuning
+    ~root_relative_semitone
 ;;
 
 let of_position ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)

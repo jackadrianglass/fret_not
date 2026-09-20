@@ -19,6 +19,10 @@ type label_mode =
   | Degree_number
   | Note_name
 
+type scale =
+  | Diatonic
+  | Pentatonic
+
 type state =
   { tonic_index : int
   ; quality_index : int
@@ -26,6 +30,8 @@ type state =
   ; quality_dropdown_open : bool
   ; label_mode_index : int
   ; label_mode_dropdown_open : bool
+  ; scale_index : int
+  ; scale_dropdown_open : bool
   ; position_index : int
   ; position_dropdown_open : bool
   }
@@ -37,6 +43,8 @@ let initial_state =
   ; quality_dropdown_open = false
   ; label_mode_index = 0
   ; label_mode_dropdown_open = false
+  ; scale_index = 0
+  ; scale_dropdown_open = false
   ; position_index = 0
   ; position_dropdown_open = false
   }
@@ -44,6 +52,7 @@ let initial_state =
 
 let quality_of_index = function 0 -> Key.Major | _ -> Key.Minor
 let label_mode_of_index = function 0 -> Degree_number | _ -> Note_name
+let scale_of_index = function 0 -> Diatonic | _ -> Pentatonic
 
 let mode_of_quality = function
   | Key.Major -> Mode.Ionian
@@ -60,16 +69,24 @@ let mode_of_state state = mode_of_quality (quality_of_index state.quality_index)
 
 let scale_degrees_for state =
   let key = key_of_state state in
-  let mode = mode_of_state state in
-  Mode.degrees mode ~root:(Key.mode_root key mode)
+  match scale_of_index state.scale_index with
+  | Diatonic ->
+      let mode = mode_of_state state in
+      Mode.degrees mode ~root:(Key.mode_root key mode)
+  | Pentatonic -> Fretboard.pentatonic_degrees ~key
 ;;
 
 let highlighted_positions_for state =
   let key = key_of_state state in
-  let mode = mode_of_state state in
   let anchor : Fretboard_position.t = { string_index = 0; fret = 0 } in
-  Fretboard.positions_in_window ~key ~mode ~tuning:Tuning.standard
-    ~anchor_position:anchor ~min_fret:0 ~max_fret:layout.fret_count
+  match scale_of_index state.scale_index with
+  | Diatonic ->
+      let mode = mode_of_state state in
+      Fretboard.positions_in_window ~key ~mode ~tuning:Tuning.standard
+        ~anchor_position:anchor ~min_fret:0 ~max_fret:layout.fret_count
+  | Pentatonic ->
+      Fretboard.pentatonic_positions_in_window ~key ~tuning:Tuning.standard
+        ~anchor_position:anchor ~min_fret:0 ~max_fret:layout.fret_count
 ;;
 
 let three_notes_per_string_positions_for state =
@@ -78,13 +95,20 @@ let three_notes_per_string_positions_for state =
   Fretboard.three_notes_per_string_positions ~key ~mode ~tuning:Tuning.standard
 ;;
 
+let two_notes_per_string_positions_for state =
+  let key = key_of_state state in
+  Fretboard.two_notes_per_string_positions ~key ~tuning:Tuning.standard
+;;
+
 let selected_position_for state =
   if state.position_index = 0 then None
   else
-    Some
-      (List.nth_exn
-         (three_notes_per_string_positions_for state)
-         (state.position_index - 1))
+    let positions =
+      match scale_of_index state.scale_index with
+      | Diatonic -> three_notes_per_string_positions_for state
+      | Pentatonic -> two_notes_per_string_positions_for state
+    in
+    Some (List.nth_exn positions (state.position_index - 1))
 ;;
 
 let mode_names_from mode =
@@ -260,11 +284,17 @@ let label_mode_options = "Degrees;Notes"
 let showing_text = "showing"
 
 let position_options_for state =
-  let names = mode_names_from (mode_of_state state) in
-  "All" :: List.mapi names ~f:(fun i name -> Int.to_string (i + 1) ^ " " ^ name)
-  |> String.concat ~sep:";"
+  let options =
+    match scale_of_index state.scale_index with
+    | Diatonic ->
+        mode_names_from (mode_of_state state)
+        |> List.mapi ~f:(fun i name -> Int.to_string (i + 1) ^ " " ^ name)
+    | Pentatonic -> List.init 5 ~f:(fun i -> Int.to_string (i + 1))
+  in
+  "All" :: options |> String.concat ~sep:";"
 ;;
 
+let scale_options = "Diatonic;Pentatonic"
 let control_bar_x = 10.
 let control_bar_y = 15.
 let control_height = 20.
@@ -275,12 +305,14 @@ let draw_controls (state : state) : state =
   let position_options = position_options_for state in
   let tonic_width = dropdown_width tonic_options in
   let quality_width = dropdown_width quality_options in
+  let scale_width = dropdown_width scale_options in
   let position_width = dropdown_width position_options in
   let showing_width = label_width showing_text in
   let label_mode_width = dropdown_width label_mode_options in
   let tonic_x = control_bar_x in
   let quality_x = tonic_x +. tonic_width +. control_gap in
-  let position_x = quality_x +. quality_width +. control_gap in
+  let scale_x = quality_x +. quality_width +. control_gap in
+  let position_x = scale_x +. scale_width +. control_gap in
   let showing_x = position_x +. position_width +. control_gap in
   let label_mode_x = showing_x +. showing_width +. control_gap in
   let quality_index, quality_toggled =
@@ -292,6 +324,15 @@ let draw_controls (state : state) : state =
     if quality_toggled then not state.quality_dropdown_open
     else state.quality_dropdown_open
   in
+  let scale_index, scale_toggled =
+    Raygui.dropdown_box
+      (Rectangle.create scale_x control_bar_y scale_width control_height)
+      scale_options state.scale_index state.scale_dropdown_open
+  in
+  let scale_dropdown_open =
+    if scale_toggled then not state.scale_dropdown_open
+    else state.scale_dropdown_open
+  in
   let position_index, position_toggled =
     Raygui.dropdown_box
       (Rectangle.create position_x control_bar_y position_width control_height)
@@ -300,6 +341,12 @@ let draw_controls (state : state) : state =
   let position_dropdown_open =
     if position_toggled then not state.position_dropdown_open
     else state.position_dropdown_open
+  in
+  let position_index =
+    (* Diatonic and Pentatonic have different-length position lists, so a
+       stale index carried across a scale switch could point at the wrong
+       position or fall outside the new list. *)
+    if scale_index <> state.scale_index then 0 else position_index
   in
   Raygui.label
     (Rectangle.create showing_x control_bar_y showing_width control_height)
@@ -329,6 +376,8 @@ let draw_controls (state : state) : state =
   ; quality_dropdown_open
   ; label_mode_index
   ; label_mode_dropdown_open
+  ; scale_index
+  ; scale_dropdown_open
   ; position_index
   ; position_dropdown_open
   }

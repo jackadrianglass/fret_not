@@ -1,0 +1,4 @@
+break-separators=before
+dock-collection-brackets=false
+let-binding-spacing=double-semicolon
+type-decl=sparse

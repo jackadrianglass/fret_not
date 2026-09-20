@@ -1,0 +1,4 @@
+(executable
+ (public_name fret_not)
+ (name main)
+ (libraries fret_not base raylib raygui))

@@ -101,6 +101,114 @@ let positions_in_window_matches_the_guessed_range_search () =
     )
 ;;
 
+let three_notes_per_string_positions_are_seven_of_eighteen () =
+  let positions =
+    Fretboard.three_notes_per_string_positions ~key:c_major ~mode:Mode.Ionian
+      ~tuning:Tuning.standard
+  in
+  Alcotest.(check int) "seven positions" 7 (List.length positions);
+  List.iter positions ~f:(fun position ->
+      Alcotest.(check int) "18 notes (6 strings x 3)" 18 (List.length position))
+;;
+
+let position_one_matches_the_known_c_major_ionian_shape () =
+  let positions =
+    Fretboard.three_notes_per_string_positions ~key:c_major ~mode:Mode.Ionian
+      ~tuning:Tuning.standard
+  in
+  let position_one = List.hd_exn positions in
+  Alcotest.(check (list (pair int int)))
+    "C major Ionian position 1"
+    [ (0, 8)
+    ; (0, 10)
+    ; (0, 12)
+    ; (1, 8)
+    ; (1, 10)
+    ; (1, 12)
+    ; (2, 9)
+    ; (2, 10)
+    ; (2, 12)
+    ; (3, 9)
+    ; (3, 10)
+    ; (3, 12)
+    ; (4, 10)
+    ; (4, 12)
+    ; (4, 13)
+    ; (5, 10)
+    ; (5, 12)
+    ; (5, 13)
+    ]
+    (List.map position_one ~f:(fun (p : Fretboard_position.t) ->
+         (p.string_index, p.fret)))
+;;
+
+let position_three_is_dropped_to_its_lowest_playable_octave () =
+  let positions =
+    Fretboard.three_notes_per_string_positions ~key:c_major ~mode:Mode.Ionian
+      ~tuning:Tuning.standard
+  in
+  let position_three = List.nth_exn positions 2 in
+  Alcotest.(check (list (pair int int)))
+    "C major Phrygian position 3, dropped an octave to stay on the neck"
+    [ (0, 0)
+    ; (0, 1)
+    ; (0, 3)
+    ; (1, 0)
+    ; (1, 2)
+    ; (1, 3)
+    ; (2, 0)
+    ; (2, 2)
+    ; (2, 3)
+    ; (3, 0)
+    ; (3, 2)
+    ; (3, 4)
+    ; (4, 1)
+    ; (4, 3)
+    ; (4, 5)
+    ; (5, 1)
+    ; (5, 3)
+    ; (5, 5)
+    ]
+    (List.map position_three ~f:(fun (p : Fretboard_position.t) ->
+         (p.string_index, p.fret)))
+;;
+
+let every_position_stays_within_a_playable_octave () =
+  let positions =
+    Fretboard.three_notes_per_string_positions ~key:c_major ~mode:Mode.Ionian
+      ~tuning:Tuning.standard
+  in
+  List.iter positions ~f:(fun position ->
+      let frets =
+        List.map position ~f:(fun (p : Fretboard_position.t) -> p.fret)
+      in
+      let min_fret =
+        List.min_elt frets ~compare:Int.compare |> Option.value_exn
+      in
+      Alcotest.(check bool)
+        "lowest fret in each position is within the first octave" true
+        (min_fret >= 0 && min_fret < 12))
+;;
+
+let positions_land_on_modes_in_sequential_order () =
+  let positions =
+    Fretboard.three_notes_per_string_positions ~key:c_major ~mode:Mode.Ionian
+      ~tuning:Tuning.standard
+  in
+  let position_mode_name (position : Fretboard_position.t list) =
+    let first = List.hd_exn position in
+    let pitch_class =
+      Tuning.pitch_class_at Tuning.standard ~string_index:first.string_index
+        ~fret:first.fret
+    in
+    Mode.name (Option.value_exn (Key.mode_with_root c_major pitch_class))
+  in
+  Alcotest.(check (list string))
+    "positions land on modes in Ionian..Locrian order"
+    (List.map Mode.all ~f:Mode.name)
+    (List.map positions ~f:position_mode_name)
+;;
+
 let tests =
   [ Alcotest.test_case "octave 0 unreachable near open low E" `Quick
       degree_one_octave_zero_is_unreachable_near_open_low_e
@@ -114,5 +222,15 @@ let tests =
       every_string_shows_all_seven_degrees_within_twelve_frets
   ; Alcotest.test_case "positions_in_window matches the guessed-range search"
       `Quick positions_in_window_matches_the_guessed_range_search
+  ; Alcotest.test_case "three_notes_per_string_positions are seven of eighteen"
+      `Quick three_notes_per_string_positions_are_seven_of_eighteen
+  ; Alcotest.test_case "position 1 matches the known C major Ionian shape"
+      `Quick position_one_matches_the_known_c_major_ionian_shape
+  ; Alcotest.test_case "positions land on modes in sequential order" `Quick
+      positions_land_on_modes_in_sequential_order
+  ; Alcotest.test_case "position 3 is dropped to its lowest playable octave"
+      `Quick position_three_is_dropped_to_its_lowest_playable_octave
+  ; Alcotest.test_case "every position stays within a playable octave" `Quick
+      every_position_stays_within_a_playable_octave
   ]
 ;;

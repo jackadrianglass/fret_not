@@ -31,6 +31,22 @@ val positions_in_window :
     filtering by hand, this can't silently miss positions on a wide neck or an
     unusual tuning. Sorted by (string_index, fret). *)
 
+val three_notes_per_string_positions :
+  key:Key.t -> mode:Mode.t -> tuning:Tuning.t -> Fretboard_position.t list list
+(** The 7 "3-notes-per-string" mode positions for this key, one flat list of
+    Fretboard_position.t per position (string_index ascending, 3 ascending
+    diatonic frets per string). Position 1 starts at the nearest occurrence of
+    [mode]'s own root to the low string's open position; each later position
+    starts one scale-degree past the previous position's own low-string start
+    (not past its last note), so adjacent positions share 2 of their 3
+    low-string notes and position N lands on the Nth mode in Key.modes order
+    (e.g. position 2 is Dorian relative to a major key). Climbing the neck one
+    scale-degree at a time would otherwise walk positions further and further up
+    with no way back down, so each position is dropped by whole octaves (pitch
+    class is unaffected by octave, so this doesn't change which mode it is) to
+    sit at its own lowest playable spot - unlike to_positions/
+    positions_in_window, not unbounded. *)
+
 val of_position :
      key:Key.t
   -> mode:Mode.t

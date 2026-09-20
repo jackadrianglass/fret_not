@@ -26,3 +26,10 @@ let mode_root t mode =
 let modes t =
   List.map Mode.all ~f:(fun m -> (m, Mode.degrees m ~root:(mode_root t m)))
 ;;
+
+let mode_with_root t pitch_class =
+  List.find_map (modes t) ~f:(fun (m, degrees) ->
+      if Pitch_class.equal (List.hd_exn degrees).pitch_class pitch_class then
+        Some m
+      else None)
+;;

@@ -26,6 +26,8 @@ type state =
   ; quality_dropdown_open : bool
   ; label_mode_index : int
   ; label_mode_dropdown_open : bool
+  ; position_index : int
+  ; position_dropdown_open : bool
   }
 
 let initial_state =
@@ -35,6 +37,8 @@ let initial_state =
   ; quality_dropdown_open = false
   ; label_mode_index = 0
   ; label_mode_dropdown_open = false
+  ; position_index = 0
+  ; position_dropdown_open = false
   }
 ;;
 
@@ -66,6 +70,29 @@ let highlighted_positions_for state =
   let anchor : Fretboard_position.t = { string_index = 0; fret = 0 } in
   Fretboard.positions_in_window ~key ~mode ~tuning:Tuning.standard
     ~anchor_position:anchor ~min_fret:0 ~max_fret:layout.fret_count
+;;
+
+let three_notes_per_string_positions_for state =
+  let key = key_of_state state in
+  let mode = mode_of_state state in
+  Fretboard.three_notes_per_string_positions ~key ~mode ~tuning:Tuning.standard
+;;
+
+let selected_position_for state =
+  if state.position_index = 0 then None
+  else
+    Some
+      (List.nth_exn
+         (three_notes_per_string_positions_for state)
+         (state.position_index - 1))
+;;
+
+let mode_names_from mode =
+  let start_index =
+    List.findi_exn Mode.all ~f:(fun _ m -> Poly.equal m mode) |> fst
+  in
+  List.drop Mode.all start_index @ List.take Mode.all start_index
+  |> List.map ~f:Mode.name
 ;;
 
 let dropdown_left_text_padding = 6
@@ -173,17 +200,22 @@ let draw_centered_text text ~center_x ~center_y ~color =
     label_font_size color
 ;;
 
-let draw_in_key_dot ~label_mode (scale_degree : Scale_degree.t) ~center_x
+let dimmed_alpha = 0.3
+
+let draw_in_key_dot ~label_mode ~dim (scale_degree : Scale_degree.t) ~center_x
     ~center_y =
-  Raylib.draw_circle center_x center_y position_dot_radius (ui_accent_fill ());
+  let shade color = if dim then Raylib.fade color dimmed_alpha else color in
+  Raylib.draw_circle center_x center_y position_dot_radius
+    (shade (ui_accent_fill ()));
   Raylib.draw_circle_lines center_x center_y position_dot_radius
-    (ui_accent_border ());
+    (shade (ui_accent_border ()));
   if scale_degree.degree = 1 then
     Raylib.draw_circle_lines center_x center_y root_halo_radius
-      Raylib.Color.black;
+      (shade Raylib.Color.black);
   draw_centered_text
     (position_label_text ~label_mode scale_degree)
-    ~center_x ~center_y ~color:(ui_accent_text ())
+    ~center_x ~center_y
+    ~color:(shade (ui_accent_text ()))
 ;;
 
 let draw_off_key_dot ~center_x ~center_y =
@@ -193,6 +225,7 @@ let draw_off_key_dot ~center_x ~center_y =
 
 let draw_fret_positions state =
   let in_key = highlighted_positions_for state in
+  let selected_position = selected_position_for state in
   let scale_degrees = scale_degrees_for state in
   let label_mode = label_mode_of_index state.label_mode_index in
   for string_index = 0 to layout.string_count - 1 do
@@ -209,7 +242,13 @@ let draw_fret_positions state =
           List.find_exn scale_degrees ~f:(fun (d : Scale_degree.t) ->
               Pitch_class.equal d.pitch_class pitch_class)
         in
-        draw_in_key_dot ~label_mode scale_degree ~center_x ~center_y
+        let dim =
+          match selected_position with
+          | None -> false
+          | Some positions ->
+              not (List.mem positions position ~equal:Fretboard_position.equal)
+        in
+        draw_in_key_dot ~label_mode ~dim scale_degree ~center_x ~center_y
       else draw_off_key_dot ~center_x ~center_y
     done
   done
@@ -219,6 +258,13 @@ let tonic_options = "C;C#;D;D#;E;F;F#;G;G#;A;A#;B"
 let quality_options = "Major;Minor"
 let label_mode_options = "Degrees;Notes"
 let showing_text = "showing"
+
+let position_options_for state =
+  let names = mode_names_from (mode_of_state state) in
+  "All" :: List.mapi names ~f:(fun i name -> Int.to_string (i + 1) ^ " " ^ name)
+  |> String.concat ~sep:";"
+;;
+
 let control_bar_x = 10.
 let control_bar_y = 15.
 let control_height = 20.
@@ -226,13 +272,16 @@ let control_gap = 10.
 
 let draw_controls (state : state) : state =
   let open Raylib in
+  let position_options = position_options_for state in
   let tonic_width = dropdown_width tonic_options in
   let quality_width = dropdown_width quality_options in
+  let position_width = dropdown_width position_options in
   let showing_width = label_width showing_text in
   let label_mode_width = dropdown_width label_mode_options in
   let tonic_x = control_bar_x in
   let quality_x = tonic_x +. tonic_width +. control_gap in
-  let showing_x = quality_x +. quality_width +. control_gap in
+  let position_x = quality_x +. quality_width +. control_gap in
+  let showing_x = position_x +. position_width +. control_gap in
   let label_mode_x = showing_x +. showing_width +. control_gap in
   let quality_index, quality_toggled =
     Raygui.dropdown_box
@@ -242,6 +291,15 @@ let draw_controls (state : state) : state =
   let quality_dropdown_open =
     if quality_toggled then not state.quality_dropdown_open
     else state.quality_dropdown_open
+  in
+  let position_index, position_toggled =
+    Raygui.dropdown_box
+      (Rectangle.create position_x control_bar_y position_width control_height)
+      position_options state.position_index state.position_dropdown_open
+  in
+  let position_dropdown_open =
+    if position_toggled then not state.position_dropdown_open
+    else state.position_dropdown_open
   in
   Raygui.label
     (Rectangle.create showing_x control_bar_y showing_width control_height)
@@ -271,6 +329,8 @@ let draw_controls (state : state) : state =
   ; quality_dropdown_open
   ; label_mode_index
   ; label_mode_dropdown_open
+  ; position_index
+  ; position_dropdown_open
   }
 ;;
 

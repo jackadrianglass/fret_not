@@ -85,6 +85,92 @@ let positions_in_window ~key ~mode ~tuning
       | c -> c)
 ;;
 
+let rec ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
+    ~min_relative_semitone ~count ~fret =
+  if count = 0 then []
+  else
+    let semitone = Tuning.relative_semitone tuning ~string_index ~fret in
+    let pitch_class = Tuning.pitch_class_at tuning ~string_index ~fret in
+    if
+      semitone >= min_relative_semitone
+      && List.mem diatonic_pitch_classes pitch_class ~equal:Pitch_class.equal
+    then
+      { Fretboard_position.string_index; fret }
+      :: ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
+           ~min_relative_semitone ~count:(count - 1) ~fret:(fret + 1)
+    else
+      ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
+        ~min_relative_semitone ~count ~fret:(fret + 1)
+;;
+
+let three_ascending_diatonic_positions tuning ~diatonic_pitch_classes
+    ~string_index ~min_relative_semitone =
+  let open_offset = Tuning.relative_semitone tuning ~string_index ~fret:0 in
+  let start_fret = Int.max 0 (min_relative_semitone - open_offset) in
+  ascending_diatonic_frets tuning ~diatonic_pitch_classes ~string_index
+    ~min_relative_semitone ~count:3 ~fret:start_fret
+;;
+
+let one_three_notes_per_string_position tuning ~diatonic_pitch_classes
+    ~string_count ~low_string_min_semitone =
+  let rec across_strings string_index min_semitone =
+    if string_index = string_count then []
+    else
+      let notes =
+        three_ascending_diatonic_positions tuning ~diatonic_pitch_classes
+          ~string_index ~min_relative_semitone:min_semitone
+      in
+      let next_min_semitone =
+        relative_semitone_of_position tuning (List.last_exn notes) + 1
+      in
+      notes @ across_strings (string_index + 1) next_min_semitone
+  in
+  across_strings 0 low_string_min_semitone
+;;
+
+let dropped_to_lowest_playable_octave position =
+  let min_fret =
+    List.map position ~f:(fun (p : Fretboard_position.t) -> p.fret)
+    |> List.min_elt ~compare:Int.compare
+    |> Option.value_exn
+  in
+  let octave_drop = min_fret / 12 * 12 in
+  List.map position ~f:(fun (p : Fretboard_position.t) ->
+      { p with fret = p.fret - octave_drop })
+;;
+
+let three_notes_per_string_positions ~key ~mode ~tuning =
+  let diatonic_pitch_classes =
+    List.map (mode_degrees ~key ~mode) ~f:(fun (d : Scale_degree.t) ->
+        d.pitch_class)
+  in
+  let string_count = Tuning.string_count tuning in
+  let root_pitch_class = Key.mode_root key mode in
+  let open_string_pitch_class =
+    Tuning.pitch_class_at tuning ~string_index:0 ~fret:0
+  in
+  let root_relative_semitone =
+    (Pitch_class.to_int root_pitch_class
+    - Pitch_class.to_int open_string_pitch_class
+    + 12)
+    % 12
+  in
+  let rec positions remaining low_string_min_semitone =
+    if remaining = 0 then []
+    else
+      let this_position =
+        one_three_notes_per_string_position tuning ~diatonic_pitch_classes
+          ~string_count ~low_string_min_semitone
+      in
+      let next_low_string_min_semitone =
+        relative_semitone_of_position tuning (List.nth_exn this_position 1)
+      in
+      dropped_to_lowest_playable_octave this_position
+      :: positions (remaining - 1) next_low_string_min_semitone
+  in
+  positions 7 root_relative_semitone
+;;
+
 let of_position ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)
     (position : Fretboard_position.t) =
   let pos_pitch_class = pitch_class_of_position tuning position in

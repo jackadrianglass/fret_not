@@ -2,6 +2,8 @@
 
 A guitar practice tool built around one idea: everything you practice should be reusable when you compose, perform, or improvise. Not six separate tools bolted together — one system that carries you from *practice → composition/performance/improvisation*.
 
+![Basic demo of current state](./demo.png)
+
 Yes, there's already a billion fretboard apps and tab editors out there. No, this isn't trying to be better than all of them. But it's mine, it's fully offline, and it's built around a specific idea about how practice material should be represented.
 
 ## The core idea

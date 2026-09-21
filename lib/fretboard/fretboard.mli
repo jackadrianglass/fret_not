@@ -76,6 +76,34 @@ val two_notes_per_string_positions :
     (one octave of the 5-note pentatonic scale) instead of 3 and 7. No ~mode
     parameter, for the same reason as pentatonic_positions_in_window. *)
 
+val arpeggio_degrees : key:Key.t -> Scale_degree.t list
+(** This key's own triad arpeggio degrees (major arpeggio for a Major key, minor
+    arpeggio for a Minor one) - see Arpeggio. Degree numbers are the original
+    1/3/5 from the full diatonic scale, not renumbered. *)
+
+val arpeggio_positions_in_window :
+     key:Key.t
+  -> tuning:Tuning.t
+  -> anchor_position:Fretboard_position.t
+  -> min_fret:int
+  -> max_fret:int
+  -> Fretboard_position.t list
+(** Same contract as positions_in_window, restricted to this key's own triad
+    arpeggio (see arpeggio_degrees) instead of all 7 diatonic degrees. No ~mode
+    parameter, for the same reason as pentatonic_positions_in_window. *)
+
+val one_note_per_string_positions :
+  key:Key.t -> tuning:Tuning.t -> Fretboard_position.t list list
+(** The 3 arpeggio positions (Root, 1st Inversion, 2nd Inversion) for this key's
+    own triad, one flat list of Fretboard_position.t per position: 1 note per
+    string, plus one extra closing note on the high string that continues the
+    same ascending walk one more step, so the position starts and ends on the
+    same tone. Otherwise the same chaining/octave-drop contract as
+    three_notes_per_string_positions and two_notes_per_string_positions, sized
+    for 1 note/string and 3 positions (one octave of the 3-note arpeggio)
+    instead of 3/7 or 2/5. No ~mode parameter, for the same reason as
+    arpeggio_positions_in_window. *)
+
 val of_position :
      key:Key.t
   -> mode:Mode.t

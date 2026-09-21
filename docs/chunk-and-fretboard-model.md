@@ -183,13 +183,16 @@ set without needing a different mode.
 
 ## 8. Code map
 
-`lib/` is grouped into three folders matching §2/§4/§5 above — `theory/`
+`lib/` is grouped into four folders matching §2/§4/§5 above — `theory/`
 (abstract, no notion of a fretboard at all), `fretboard/` (concrete +
 the bridge), `layout/` (pure rendering-support geometry, still no
+raylib), `view/` (pure UI state/config for the GUI shell, still no
 raylib). All are one dune library (`include_subdirs unqualified`), so
 module names stay unqualified — `Key`, `Mode`, `Tuning`, etc. — only the
-file location changes. `test/` mirrors the same three folders, one test
-file per source module.
+file location changes. `test/` mirrors the same four folders, one test
+file per source module. The raylib/raygui-touching drawing code itself
+lives outside this library, in `bin/fretboard_view.ml` — see
+`contributing/coding-guidelines.md` for why that boundary matters.
 
 | Concept | Module |
 |---|---|
@@ -202,3 +205,6 @@ file per source module.
 | An abstract degree+octave+alteration | `lib/fretboard/degree_reference.ml` |
 | The abstract ↔ concrete bridge | `lib/fretboard/fretboard.ml` |
 | Pixel geometry for rendering (not domain) | `lib/layout/fretboard_layout.ml` |
+| Control-row geometry (x-positions, dropdown width) | `lib/layout/row_layout.ml` |
+| GUI presentation config (canvas size, radii, fonts, ...) | `lib/view/fretboard_view_config.ml` |
+| GUI selection/state computations (scale, position, labels) | `lib/view/fretboard_view_state.ml` |

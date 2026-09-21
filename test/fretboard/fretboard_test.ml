@@ -311,6 +311,81 @@ let pentatonic_positions_in_window_covers_only_five_pitch_classes () =
     (List.equal Pitch_class.equal pitch_classes expected_pitch_classes)
 ;;
 
+let one_note_per_string_positions_are_three_of_seven () =
+  let positions =
+    Fretboard.one_note_per_string_positions ~key:c_major ~tuning:Tuning.standard
+  in
+  Alcotest.(check int) "three positions" 3 (List.length positions);
+  List.iter positions ~f:(fun position ->
+      Alcotest.(check int)
+        "7 notes (6 strings, high string doubled)" 7 (List.length position))
+;;
+
+let arpeggio_position_one_matches_the_known_c_major_root_shape () =
+  let positions =
+    Fretboard.one_note_per_string_positions ~key:c_major ~tuning:Tuning.standard
+  in
+  let position_one = List.hd_exn positions in
+  Alcotest.(check (list (pair int int)))
+    "C major arpeggio Root position"
+    [ (0, 8); (1, 7); (2, 5); (3, 5); (4, 5); (5, 3); (5, 8) ]
+    (List.map position_one ~f:(fun (p : Fretboard_position.t) ->
+         (p.string_index, p.fret)))
+;;
+
+let arpeggio_positions_bookend_on_their_own_starting_tone () =
+  let positions =
+    Fretboard.one_note_per_string_positions ~key:c_major ~tuning:Tuning.standard
+  in
+  List.iter positions ~f:(fun position ->
+      let first = List.hd_exn position in
+      let last = List.last_exn position in
+      Alcotest.(check bool)
+        "first and last note of a position share the same pitch class" true
+        (Pitch_class.equal
+           (Tuning.pitch_class_at Tuning.standard
+              ~string_index:first.string_index ~fret:first.fret)
+           (Tuning.pitch_class_at Tuning.standard
+              ~string_index:last.string_index ~fret:last.fret)))
+;;
+
+let every_arpeggio_position_stays_within_a_playable_octave () =
+  let positions =
+    Fretboard.one_note_per_string_positions ~key:c_major ~tuning:Tuning.standard
+  in
+  List.iter positions ~f:(fun position ->
+      let frets =
+        List.map position ~f:(fun (p : Fretboard_position.t) -> p.fret)
+      in
+      let min_fret =
+        List.min_elt frets ~compare:Int.compare |> Option.value_exn
+      in
+      Alcotest.(check bool)
+        "lowest fret in each arpeggio position is within the first octave" true
+        (min_fret >= 0 && min_fret < 12))
+;;
+
+let arpeggio_positions_in_window_covers_only_three_pitch_classes () =
+  let positions =
+    Fretboard.arpeggio_positions_in_window ~key:c_major ~tuning:Tuning.standard
+      ~anchor_position:anchor_open_low_e ~min_fret:0 ~max_fret:12
+  in
+  let pitch_classes =
+    List.map positions ~f:(fun (p : Fretboard_position.t) ->
+        Tuning.pitch_class_at Tuning.standard ~string_index:p.string_index
+          ~fret:p.fret)
+    |> List.dedup_and_sort ~compare:Pitch_class.compare
+  in
+  let expected_pitch_classes =
+    Fretboard.arpeggio_degrees ~key:c_major
+    |> List.map ~f:(fun (d : Scale_degree.t) -> d.pitch_class)
+    |> List.dedup_and_sort ~compare:Pitch_class.compare
+  in
+  Alcotest.(check bool)
+    "positions in window only ever land on the 3 arpeggio pitch classes" true
+    (List.equal Pitch_class.equal pitch_classes expected_pitch_classes)
+;;
+
 let tests =
   [ Alcotest.test_case "octave 0 unreachable near open low E" `Quick
       degree_one_octave_zero_is_unreachable_near_open_low_e
@@ -347,5 +422,17 @@ let tests =
   ; Alcotest.test_case
       "pentatonic_positions_in_window covers only five pitch classes" `Quick
       pentatonic_positions_in_window_covers_only_five_pitch_classes
+  ; Alcotest.test_case "one_note_per_string_positions are three of seven" `Quick
+      one_note_per_string_positions_are_three_of_seven
+  ; Alcotest.test_case
+      "arpeggio position 1 matches the known C major Root shape" `Quick
+      arpeggio_position_one_matches_the_known_c_major_root_shape
+  ; Alcotest.test_case "arpeggio positions bookend on their own starting tone"
+      `Quick arpeggio_positions_bookend_on_their_own_starting_tone
+  ; Alcotest.test_case "every arpeggio position stays within a playable octave"
+      `Quick every_arpeggio_position_stays_within_a_playable_octave
+  ; Alcotest.test_case
+      "arpeggio_positions_in_window covers only three pitch classes" `Quick
+      arpeggio_positions_in_window_covers_only_three_pitch_classes
   ]
 ;;

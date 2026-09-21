@@ -177,9 +177,23 @@ let relative_semitone_of_pitch_class tuning ~pitch_class =
   % 12
 ;;
 
+(* "One scale-step past the start" of the low string - found by searching
+   one more step past its first note directly, rather than indexing into
+   an already-built position (which only works when there are >= 2 notes
+   on that string to index into). *)
+let one_step_past_low_string_start tuning ~diatonic_pitch_classes
+    ~low_string_start_semitone =
+  ascending_diatonic_positions tuning ~diatonic_pitch_classes ~string_index:0
+    ~min_relative_semitone:(low_string_start_semitone + 1)
+    ~count:1
+  |> List.hd_exn
+  |> relative_semitone_of_position tuning
+;;
+
 (* Walking one scale-degree per position always covers exactly one octave
    of whichever scale is in play, so the position count is just how many
-   degrees the scale has - 7 for a full diatonic walk, 5 for pentatonic. *)
+   degrees the scale has - 7 for a full diatonic walk, 5 for pentatonic,
+   3 for an arpeggio. *)
 let notes_per_string_positions ~notes_per_string ~diatonic_pitch_classes ~tuning
     ~root_relative_semitone =
   let string_count = Tuning.string_count tuning in
@@ -191,12 +205,12 @@ let notes_per_string_positions ~notes_per_string ~diatonic_pitch_classes ~tuning
         one_notes_per_string_position tuning ~diatonic_pitch_classes
           ~notes_per_string ~string_count ~low_string_min_semitone
       in
-      (* Index 1 is "one scale-step past the start" regardless of
-         notes_per_string - for 2 notes/string that's simply the low
-         string's last note, giving positions that share 1 of 2 low-string
-         notes (the analog of 3nps's "shares 2 of 3"). *)
+      let low_string_start_semitone =
+        relative_semitone_of_position tuning (List.hd_exn this_position)
+      in
       let next_low_string_min_semitone =
-        relative_semitone_of_position tuning (List.nth_exn this_position 1)
+        one_step_past_low_string_start tuning ~diatonic_pitch_classes
+          ~low_string_start_semitone
       in
       dropped_to_lowest_playable_octave this_position
       :: positions (remaining - 1) next_low_string_min_semitone
@@ -227,6 +241,43 @@ let two_notes_per_string_positions ~key ~tuning =
   in
   notes_per_string_positions ~notes_per_string:2 ~diatonic_pitch_classes ~tuning
     ~root_relative_semitone
+;;
+
+let arpeggio_degrees ~key =
+  match Key.quality key with
+  | Key.Major -> Arpeggio.major ~root:(Key.tonic key)
+  | Key.Minor -> Arpeggio.minor ~root:(Key.tonic key)
+;;
+
+let arpeggio_positions_in_window ~key ~tuning ~anchor_position ~min_fret
+    ~max_fret =
+  positions_in_window_for_degrees tuning ~anchor_position ~min_fret ~max_fret
+    (arpeggio_degrees ~key)
+;;
+
+let with_closing_note tuning ~diatonic_pitch_classes position =
+  let last = List.last_exn position in
+  let closing_note =
+    ascending_diatonic_positions tuning ~diatonic_pitch_classes
+      ~string_index:last.Fretboard_position.string_index
+      ~min_relative_semitone:(relative_semitone_of_position tuning last + 1)
+      ~count:1
+    |> List.hd_exn
+  in
+  position @ [ closing_note ]
+;;
+
+let one_note_per_string_positions ~key ~tuning =
+  let diatonic_pitch_classes =
+    List.map (arpeggio_degrees ~key) ~f:(fun (d : Scale_degree.t) ->
+        d.pitch_class)
+  in
+  let root_relative_semitone =
+    relative_semitone_of_pitch_class tuning ~pitch_class:(Key.tonic key)
+  in
+  notes_per_string_positions ~notes_per_string:1 ~diatonic_pitch_classes ~tuning
+    ~root_relative_semitone
+  |> List.map ~f:(with_closing_note tuning ~diatonic_pitch_classes)
 ;;
 
 let of_position ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)

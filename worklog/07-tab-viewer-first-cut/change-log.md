@@ -56,3 +56,13 @@
   dimensions, margins, dot/halo radii, font sizes, tab row spacing/rule
   sizing) — control-bar-specific fields left untouched since only the
   tab/fretboard views were asked about.
+- Feedback: occupy the full screen width, but not the full height.
+  `bin/main.ml` now feeds the live `get_screen_width ()` in as
+  `canvas_width` every frame (via `{ fretboard_config with canvas_width =
+  content_width }`, since Fretboard_view's drawing functions read
+  `config.canvas_width` rather than taking it as a separate parameter),
+  instead of the static config value — `offset_x` is now always 0.
+  `content_height`/`offset_y` are unchanged (still fixed-size, still
+  vertically centered). Fret spacing and tab note spacing both stretch to
+  fill however wide the actual screen is, since they're already computed
+  purely from `canvas_width` and `margin`.

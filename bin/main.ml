@@ -10,13 +10,13 @@ let () =
          ~string_count:(Tuning.string_count fretboard_config.tuning)
          ~row_spacing:tab_config.row_spacing)
   in
-  let content_width = fretboard_config.canvas_width in
   let content_height =
     fretboard_config.control_bar_height + tab_area_height
     + Int.of_float (tab_config.rule_gap *. 2.)
     + fretboard_config.canvas_height
   in
-  Raylib.init_window content_width content_height fretboard_config.window_title;
+  Raylib.init_window fretboard_config.canvas_width content_height
+    fretboard_config.window_title;
   Raylib.set_target_fps fretboard_config.target_fps;
   Fretboard_view.setup fretboard_config;
   (* Resizes the window to match the monitor resolution itself, in the same
@@ -34,8 +34,15 @@ let () =
            current partway through the first few frames. *)
         let screen_width = get_screen_width () in
         let screen_height = get_screen_height () in
-        let offset_x = Int.max 0 ((screen_width - content_width) / 2) in
+        (* Width fills the screen edge to edge (offset_x always 0); height
+           stays at its own fixed size and is centered vertically, same as
+           before. *)
+        let content_width = screen_width in
+        let offset_x = 0 in
         let offset_y = Int.max 0 ((screen_height - content_height) / 2) in
+        let frame_fretboard_config : Fretboard_view_config.t =
+          { fretboard_config with canvas_width = content_width }
+        in
         begin_drawing ();
         clear_background Color.raywhite;
         let notes =
@@ -47,12 +54,12 @@ let () =
             ~top_y:(offset_y + fretboard_config.control_bar_height)
             ~offset_x ~notes
         in
-        Fretboard_view.draw_fretboard_grid fretboard_config
+        Fretboard_view.draw_fretboard_grid frame_fretboard_config
           ~top_y:fretboard_top_y ~offset_x;
-        Fretboard_view.draw_fret_positions fretboard_config state
+        Fretboard_view.draw_fret_positions frame_fretboard_config state
           ~top_y:fretboard_top_y ~offset_x;
         let next_state =
-          Fretboard_view.draw_controls fretboard_config state ~offset_x
+          Fretboard_view.draw_controls frame_fretboard_config state ~offset_x
             ~offset_y
         in
         end_drawing ();

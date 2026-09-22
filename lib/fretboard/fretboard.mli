@@ -1,5 +1,12 @@
 open! Base
 
+val target_pitch_class :
+  key:Key.t -> mode:Mode.t -> Degree_reference.t -> Pitch_class.t
+(** The pitch class dr's degree (and alteration) resolves to in this Key+Mode
+    - ignores dr.octave entirely. The pitch-class half of to_positions, useful
+      on its own wherever only the harmonic content (not yet a fretboard
+      position) is needed. *)
+
 val to_positions :
      key:Key.t
   -> mode:Mode.t

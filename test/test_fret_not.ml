@@ -11,5 +11,9 @@ let () =
     ; ("tab_layout", Tab_layout_test.tests)
     ; ("row_layout", Row_layout_test.tests)
     ; ("fretboard_view_state", Fretboard_view_state_test.tests)
+    ; ("slot", Slot_test.tests)
+    ; ("chunk", Chunk_test.tests)
+    ; ("chord_progression", Chord_progression_test.tests)
+    ; ("chunk_solver", Chunk_solver_test.tests)
     ]
 ;;

@@ -9,11 +9,11 @@ Update this file when the model changes; it should stay in sync with
 ## 1. The idea: a chunk is abstract on purpose
 
 The [readme](../readme.md) calls this "the architectural core of the whole
-project." A **chunk** is a sequence of notes defined by scale degree and
-rhythm *relative to a key, mode, and time signature* — not by fixed frets.
-Because it's abstract, the same chunk can be projected onto the fretboard
-in any key, at any position on the neck, or extracted back out of a tab
-someone's learning.
+project." A **chunk** is a sequence of notes (and rests) defined by scale
+degree *relative to a key and mode* — not by fixed frets, and with no
+separate rhythm representation of its own (see §7). Because it's abstract,
+the same chunk can be projected onto the fretboard in any key, at any
+position on the neck, or extracted back out of a tab someone's learning.
 
 Two things have to both be true for that to work:
 
@@ -22,12 +22,14 @@ Two things have to both be true for that to work:
 - The concrete side (tuning, fretboard position) has to know nothing about
   scale degrees.
 
-Exactly one thing is allowed to touch both: the projection bridge. That
-split is the whole model.
+Only a small number of things are allowed to touch both: `Fretboard`, the
+original projection bridge (§5), and `Chunk_solver` (§7), which builds on
+it to solve a whole sequence at once. Everything else stays on one side or
+the other. That split is the whole model.
 
-`Chunk` itself isn't built yet (`tasks/04-chunk-library/`) — what exists
-today is the foundation it'll sit on: the abstract unit a chunk is a
-sequence *of*, and the bridge that projects it.
+`Chunk` itself is built now — see §7 — on top of the foundation described
+next: the abstract unit a chunk is a sequence *of*, and the bridge that
+projects it.
 
 ## 2. The abstract side: Key, Mode, Scale Degree
 
@@ -163,36 +165,108 @@ resolves to: [ (string 0 "low E", fret 2) ]
 `alteration` is what lets a Degree Reference reach outside the diatonic
 set without needing a different mode.
 
-## 7. Open threads (not decided yet)
+## 7. The Chunk layer: Slot, Chunk, Chord Progression
 
-- **How a multi-note chunk anchors itself.** `to_positions` takes one
-  anchor per call. A real chunk is a *sequence* of Degree References — do
-  all of them anchor to the same single position (as in the examples
-  above), or does each note anchor to wherever the *previous* note
-  landed, chaining down the phrase? Both are reasonable; this is
-  `04-chunk-library`'s call to make with real chunk examples in hand.
+Settled in `worklog/08-chunk-model-design/` (design conversation) and
+landed in `worklog/09-current/` (the code). A **Chunk** is a movable,
+degree-relative sequence of notes — the thing §1 promised but didn't build
+yet is now built, one layer up from a single `Degree_reference.t`.
+
+- **`Slot.t`** (`lib/chunk/slot.ml`) — `Rest | Note of Degree_reference.t`.
+  Deliberately no separate rhythm type: a slot's presence/absence *is* the
+  rhythm, and every slot is equal duration. "Applying a Chunk over a
+  subdivision" (e.g. a 4-slot chunk over a 3-grouping, a 4-over-3
+  polyrhythm) means picking how many real time-grid units the whole slot
+  list spans — a number at render/practice time, not a new object here.
+- **`Chunk.t`** (`lib/chunk/chunk.ml`) — `Slot.t list`. No key/mode stored
+  on the Chunk itself, same as `Degree_reference.t` — a Chunk's degree
+  numbers only mean something once paired with a Key+Mode at projection
+  time, via the existing `Fretboard` bridge.
+- **`Chunk.reframe`** — reinterprets every `Note` slot's own degree number
+  against a new root degree (1-7), the same rotate-by-N-degrees move
+  `Mode.degrees` makes when picking which pitch class counts as a mode's
+  own root, generalized to an arbitrary scale-degree anchor. A degree that
+  wraps past 7 back around to 1 carries an octave into the slot's own
+  `Degree_reference.octave`, since that field is a real ±12-semitone
+  offset once projected through `Fretboard`, not just a label — a bare
+  `mod 7` relabel without the carry would silently drop a wrapped note an
+  octave low.
+- **`Chord_progression.t`** (`lib/chunk/chord_progression.ml`) —
+  `int list` of scale-degree roots (e.g. `[ 1; 4; 5 ]` for I-IV-V). Its
+  own movable object, not a Song attribute — a progression maps cleanly
+  onto a Song but not the reverse, and one Song often has several. Chord
+  quality is inferred diatonically from whatever Key+Mode it's paired
+  with; no explicit per-step quality override (borrowed chords, secondary
+  dominants) yet.
+- **`Chord_progression.apply_to_chunk`** — one reframed Chunk per
+  progression step, via `Chunk.reframe`. E.g. a bare-tonic chunk (every
+  `Note` slot at degree 1) applied over `[ 1; 4; 5 ]` produces three
+  chunks, at degrees 1, 4, and 5 respectively.
+
+- **`Chunk_solver.positions`** (`lib/chunk/chunk_solver.ml`) — the first
+  real Chunk-to-fretboard solver, and the second thing (after `Fretboard`
+  itself) that touches both the abstract and concrete sides directly: it
+  takes a starting anchor and a sequence of already-harmonically-resolved
+  `Degree_reference.t` (one chord's own reframed triad, say), and returns
+  *every* way to realize them as concrete positions that stay within a
+  hard per-move fret cap — `Chunk_solver.distance`'s `|fret delta| +
+  |string delta|` between consecutive notes, sorted nearest-overall
+  first. It resolves each note's own real, ever-increasing semitone height
+  (pitch class from `Fretboard.target_pitch_class`, plus 12 semitones per
+  octave the `Degree_reference` itself carries) *before* choosing any
+  fretboard position — reframing only ever shifts every note in a chunk by
+  the same amount, so two notes a Chunk was authored an interval apart
+  keep that exact interval once reframed onto a new chord, wrapped octave
+  or not. Only *which string* reaches that already-determined pitch is
+  chosen positionally, within the fret cap of wherever the previous note
+  landed. An earlier version of this ignored `Degree_reference.octave`
+  entirely to dodge a cross-chord compounding bug (see below) — that
+  broke every non-tonic chord in a progression (a reframed note that had
+  wrapped an octave would resolve a full octave off, breaking the
+  intended ascent) and was corrected; ignoring octave was the wrong fix; the
+  real fix was resolving every note's own true octave from its harmonic
+  content instead of chaining physical anchors and hoping proximity alone
+  preserved it.
+
+Not part of this layer yet: modal-position-constrained solving,
+variant/lineage tracking, tagging, and persistence — all still `todo.md`
+bullets.
+
+## 8. Open threads (not decided yet)
+
+- **Modal-position-constrained solving.** `Chunk_solver` finds the
+  hand-comfortable realization of a chunk's own exact harmonic content: it
+  doesn't (and structurally can't) offer "stay within this known
+  scale-position box instead" as a different, equally valid choice — see
+  `worklog/09-chunk-library-core` for a concrete case where a chunk's
+  shared-anchor projection happened to also fit cleanly inside an existing
+  `Fretboard` notes-per-string position, before `Chunk_solver` existed. A
+  second solver strategy, constrained to one of those positions, is still
+  undesigned. See `todo.md`'s Chunk-to-Fretboard Solvers section.
 - **Chromatic reverse spelling.** `of_position` currently raises on a
   non-diatonic pitch rather than guessing a spelling (sharp of the degree
   below vs. flat of the degree above are enharmonically equivalent but
   not interchangeable as data). Deferred to whichever task first needs to
-  extract a chromatic passing tone from a real tab — probably
-  `05-permutation-engine` or `06-tab-to-chunk-extraction`.
+  extract a chromatic passing tone from a real tab — probably the
+  Permutation Engine or Tab-to-Chunk Extraction sections of `todo.md`.
 - **Pentatonic and other subsets.** Not modes of their own — subsets of
   Ionian/Aeolian's own degrees. See
   `tasks/00-foundations/05-pentatonic-scale-subsets.md`.
 
-## 8. Code map
+## 9. Code map
 
-`lib/` is grouped into four folders matching §2/§4/§5 above — `theory/`
-(abstract, no notion of a fretboard at all), `fretboard/` (concrete +
-the bridge), `layout/` (pure rendering-support geometry, still no
-raylib), `view/` (pure UI state/config for the GUI shell, still no
-raylib). All are one dune library (`include_subdirs unqualified`), so
-module names stay unqualified — `Key`, `Mode`, `Tuning`, etc. — only the
-file location changes. `test/` mirrors the same four folders, one test
-file per source module. The raylib/raygui-touching drawing code itself
-lives outside this library, in `bin/fretboard_view.ml` — see
-`contributing/coding-guidelines.md` for why that boundary matters.
+`lib/` is grouped into five folders matching §2/§4/§5/§7 above —
+`theory/` (abstract, no notion of a fretboard at all), `fretboard/`
+(concrete + the bridge), `chunk/` (movable degree-relative sequences,
+built on top of `Degree_reference` but with no fretboard knowledge of its
+own), `layout/` (pure rendering-support geometry, still no raylib),
+`view/` (pure UI state/config for the GUI shell, still no raylib). All
+are one dune library (`include_subdirs unqualified`), so module names
+stay unqualified — `Key`, `Mode`, `Tuning`, etc. — only the file location
+changes. `test/` mirrors the same folders, one test file per source
+module. The raylib/raygui-touching drawing code itself lives outside this
+library, in `bin/fretboard_view.ml` — see `contributing/coding-guidelines.md`
+for why that boundary matters.
 
 | Concept | Module |
 |---|---|
@@ -204,6 +278,10 @@ lives outside this library, in `bin/fretboard_view.ml` — see
 | A concrete string+fret | `lib/fretboard/fretboard_position.ml` |
 | An abstract degree+octave+alteration | `lib/fretboard/degree_reference.ml` |
 | The abstract ↔ concrete bridge | `lib/fretboard/fretboard.ml` |
+| A rest-or-note step in a Chunk | `lib/chunk/slot.ml` |
+| A movable, degree-relative sequence of Slots | `lib/chunk/chunk.ml` |
+| A movable sequence of scale-degree chord roots | `lib/chunk/chord_progression.ml` |
+| The Chunk-to-fretboard positional solver | `lib/chunk/chunk_solver.ml` |
 | Pixel geometry for rendering (not domain) | `lib/layout/fretboard_layout.ml` |
 | Control-row geometry (x-positions, dropdown width) | `lib/layout/row_layout.ml` |
 | GUI presentation config (canvas size, radii, fonts, ...) | `lib/view/fretboard_view_config.ml` |

@@ -18,9 +18,9 @@ let distance_is_fret_delta_plus_string_delta () =
 
 let root_third_fifth_ascends_within_the_fret_cap () =
   let degrees =
-    [ { Degree_reference.degree = 1; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 3; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 5; octave = 0; alteration = 0 }
+    [ Degree_reference.natural ~degree:1 ~octave:0
+    ; Degree_reference.natural ~degree:3 ~octave:0
+    ; Degree_reference.natural ~degree:5 ~octave:0
     ]
   in
   let shapes =
@@ -45,9 +45,9 @@ let root_third_fifth_ascends_within_the_fret_cap () =
 
 let every_consecutive_move_stays_within_the_fret_cap () =
   let degrees =
-    [ { Degree_reference.degree = 1; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 3; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 5; octave = 0; alteration = 0 }
+    [ Degree_reference.natural ~degree:1 ~octave:0
+    ; Degree_reference.natural ~degree:3 ~octave:0
+    ; Degree_reference.natural ~degree:5 ~octave:0
     ]
   in
   let shapes =
@@ -67,8 +67,8 @@ let every_consecutive_move_stays_within_the_fret_cap () =
 
 let shapes_are_sorted_by_ascending_total_distance () =
   let degrees =
-    [ { Degree_reference.degree = 1; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 5; octave = 0; alteration = 0 }
+    [ Degree_reference.natural ~degree:1 ~octave:0
+    ; Degree_reference.natural ~degree:5 ~octave:0
     ]
   in
   let shapes =
@@ -95,8 +95,7 @@ let an_impossibly_tight_cap_finds_nothing () =
      6 strings - at most 6 distinct pitch classes are reachable there, so
      all 7 diatonic degrees can never simultaneously fit. *)
   let degrees =
-    List.init 7 ~f:(fun i ->
-        { Degree_reference.degree = i + 1; octave = 0; alteration = 0 })
+    List.init 7 ~f:(fun i -> Degree_reference.natural ~degree:(i + 1) ~octave:0)
   in
   let shapes =
     Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
@@ -125,9 +124,9 @@ let a_reframed_wrapped_octave_still_lands_a_real_minor_third_up () =
      ascending - not the wrapped octave being taken literally and landing a
      full 12 semitones higher than that. *)
   let degrees =
-    [ { Degree_reference.degree = 6; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 1; octave = 1; alteration = 0 }
-    ; { Degree_reference.degree = 3; octave = 1; alteration = 0 }
+    [ Degree_reference.natural ~degree:6 ~octave:0
+    ; Degree_reference.natural ~degree:1 ~octave:1
+    ; Degree_reference.natural ~degree:3 ~octave:1
     ]
   in
   let shapes =
@@ -149,8 +148,8 @@ let an_authored_octave_leap_is_preserved () =
      semitones), not silently resolve the second note to whatever's
      nearest within the fret cap. *)
   let degrees =
-    [ { Degree_reference.degree = 1; octave = 0; alteration = 0 }
-    ; { Degree_reference.degree = 1; octave = 1; alteration = 0 }
+    [ Degree_reference.natural ~degree:1 ~octave:0
+    ; Degree_reference.natural ~degree:1 ~octave:1
     ]
   in
   let shapes =

@@ -39,11 +39,7 @@ let initial =
 let quality_of_index = function 0 -> Key.Major | _ -> Key.Minor
 let label_mode_of_index = function 0 -> Degree_number | _ -> Note_name
 let scale_of_index = function 0 -> Diatonic | 1 -> Pentatonic | _ -> Arpeggio
-
-let mode_of_quality = function
-  | Key.Major -> Mode.Ionian
-  | Key.Minor -> Mode.Aeolian
-;;
+let mode_of_quality = Key.mode_of_quality
 
 let key t =
   Key.create
@@ -54,14 +50,19 @@ let key t =
 let mode t = mode_of_quality (quality_of_index t.quality_index)
 
 let scale_degrees t =
-  let key = key t in
   match scale_of_index t.scale_index with
-  | Diatonic ->
-      let mode = mode t in
-      Mode.degrees mode ~root:(Key.mode_root key mode)
-  | Pentatonic -> Fretboard.pentatonic_degrees ~key
-  | Arpeggio -> Fretboard.arpeggio_degrees ~key
+  | Diatonic -> Scale_degree.diatonic
+  | Pentatonic -> Fretboard.pentatonic_degrees ~key:(key t)
+  | Arpeggio -> Fretboard.arpeggio_degrees ~key:(key t)
 ;;
+
+let scale_mode t =
+  match scale_of_index t.scale_index with
+  | Diatonic -> mode t
+  | _ -> mode_of_quality (quality_of_index t.quality_index)
+;;
+
+let scale_root t = Key.mode_root (key t) (scale_mode t)
 
 let highlighted_positions t ~(config : Fretboard_view_config.t) =
   let key = key t in
@@ -127,8 +128,10 @@ let position_options t =
   "All" :: options |> String.concat ~sep:";"
 ;;
 
-let position_label_text ~label_mode (scale_degree : Scale_degree.t) =
+let position_label_text ~root ~mode ~label_mode (scale_degree : Scale_degree.t)
+    =
   match label_mode with
-  | Degree_number -> Int.to_string scale_degree.degree
-  | Note_name -> Pitch_class.to_string scale_degree.pitch_class
+  | Degree_number -> Scale_degree.label scale_degree
+  | Note_name ->
+      Pitch_class.to_string (Scale_degree.pitch_class ~root ~mode scale_degree)
 ;;

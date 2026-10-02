@@ -4,13 +4,15 @@ open Fret_not
 let c_major_arpeggio_is_the_major_triad () =
   Alcotest.(check (list string))
     "C major arpeggio" [ "C"; "E"; "G" ]
-    (Test_helpers.names (Arpeggio.major ~root:Pitch_class.c))
+    (Test_helpers.degree_names ~root:Pitch_class.c ~mode:Mode.Ionian
+       Arpeggio.major)
 ;;
 
 let a_minor_arpeggio_is_the_minor_triad () =
   Alcotest.(check (list string))
     "A minor arpeggio" [ "A"; "C"; "E" ]
-    (Test_helpers.names (Arpeggio.minor ~root:Pitch_class.a))
+    (Test_helpers.degree_names ~root:Pitch_class.a ~mode:Mode.Aeolian
+       Arpeggio.minor)
 ;;
 
 let tests =

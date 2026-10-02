@@ -5,14 +5,16 @@ let c_major_pentatonic_drops_the_fourth_and_seventh () =
   Alcotest.(check (list string))
     "C major pentatonic"
     [ "C"; "D"; "E"; "G"; "A" ]
-    (Test_helpers.names (Pentatonic.major ~root:Pitch_class.c))
+    (Test_helpers.degree_names ~root:Pitch_class.c ~mode:Mode.Ionian
+       Pentatonic.major)
 ;;
 
 let a_minor_pentatonic_drops_the_second_and_sixth () =
   Alcotest.(check (list string))
     "A minor pentatonic"
     [ "A"; "C"; "D"; "E"; "G" ]
-    (Test_helpers.names (Pentatonic.minor ~root:Pitch_class.a))
+    (Test_helpers.degree_names ~root:Pitch_class.a ~mode:Mode.Aeolian
+       Pentatonic.minor)
 ;;
 
 let tests =

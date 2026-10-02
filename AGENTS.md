@@ -34,12 +34,18 @@ Build system: dune 3.23, `fret_not.opam` generated from `dune-project`
 ```
 lib/theory/        what the music is (no fretboard knowledge)
   pitch_class.ml   int mod 12 + names; all arithmetic goes through add/of_int
-  scale_degree.ml  {degree: 1..7; pitch_class} — a mode's ordered output
+  alteration.ml    Natural | Sharp | Flat | Double_sharp | Double_flat — the
+                   notational accidental of a scale degree
+  scale_degree.ml  {degree: 1..7; alteration} — a notated scale degree (1, b3,
+                   #4). Pitch class is *derived* (pitch_class ~root ~mode),
+                   never stored; the 7 degrees of any mode are the same
+                   notational objects (Scale_degree.diatonic)
   mode.ml          7 diatonic modes. Key insight: a mode is a *rotation* of the
                    major scale — root_offset_semitones indexes into
-                   [0;2;4;5;7;9;11], degrees() rotates the parent scale
+                   [0;2;4;5;7;9;11], pitch_classes() rotates the parent scale
   key.ml            {tonic; Major|Minor}; mode_root() lifts tonic to any mode
-                   via the parent-major trick
+                   via the parent-major trick; mode_of_quality() maps
+                   Major/Minor to Ionian/Aeolian
   pentatonic.ml    degree-subset presets (major/minor pentatonic)
   arpeggio.ml      degree-subset presets (triads)
 
@@ -47,7 +53,8 @@ lib/fretboard/     the abstract↔concrete bridge
   fretboard_position.ml   {string_index; fret} — a concrete position
   tuning.ml        open-string pitch classes; relative_semitone() gives an
                    absolute semitone for any position (standard/drop D/7-string)
-  degree_reference.ml      {degree; octave; alteration} — THE abstract note
+  degree_reference.ml      {scale_degree; octave} — THE abstract note (a
+                   possibly-altered degree plus octave)
   fretboard.ml     to_positions (degree→positions), positions_in_window
                    (overlay generation), *_notes_per_string_positions
                    (7/5/3/2/1-notes-per-string shape generators),
@@ -66,7 +73,7 @@ lib/chunk/         the movable pattern layer (newest, most conceptually central)
   chunk_solver.ml  positions() — every fingering of a reframed chunk, ranked by
                    |fret delta| + |string delta| from a start anchor. CRITICAL
                    invariant: resolve each note's absolute semitone
-                   (degree+octave) FIRST, then choose only *which string*.
+                   (scale_degree+octave) FIRST, then choose only *which string*.
                    Skipping this broke every non-tonic chord (see
                    chunk_solver_test.ml regression tests)
 

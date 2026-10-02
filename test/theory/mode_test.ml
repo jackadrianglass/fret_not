@@ -7,7 +7,7 @@ let dorian_from_root_matches_rotation () =
   Alcotest.(check (list string))
     "D Dorian"
     [ "D"; "E"; "F"; "G"; "A"; "B"; "C" ]
-    (Test_helpers.names (Mode.degrees Dorian ~root:d))
+    (Test_helpers.names (Mode.pitch_classes Dorian ~root:d))
 ;;
 
 let tests =

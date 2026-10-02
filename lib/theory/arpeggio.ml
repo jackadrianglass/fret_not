@@ -1,9 +1,9 @@
 open! Base
 
-let keep degrees ~allowed =
-  List.filter degrees ~f:(fun (d : Scale_degree.t) ->
+let keep ~allowed =
+  List.filter Scale_degree.diatonic ~f:(fun (d : Scale_degree.t) ->
       List.mem allowed d.degree ~equal:Int.equal)
 ;;
 
-let major ~root = keep (Mode.degrees Ionian ~root) ~allowed:[ 1; 3; 5 ]
-let minor ~root = keep (Mode.degrees Aeolian ~root) ~allowed:[ 1; 3; 5 ]
+let major = keep ~allowed:[ 1; 3; 5 ]
+let minor = keep ~allowed:[ 1; 3; 5 ]

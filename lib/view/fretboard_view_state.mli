@@ -30,6 +30,8 @@ val mode_of_quality : Key.quality -> Mode.t
 val key : t -> Key.t
 val mode : t -> Mode.t
 val scale_degrees : t -> Scale_degree.t list
+val scale_mode : t -> Mode.t
+val scale_root : t -> Pitch_class.t
 
 val highlighted_positions :
   t -> config:Fretboard_view_config.t -> Fretboard_position.t list
@@ -48,4 +50,10 @@ val selected_position :
 
 val mode_names_from : Mode.t -> string list
 val position_options : t -> string
-val position_label_text : label_mode:label_mode -> Scale_degree.t -> string
+
+val position_label_text :
+     root:Pitch_class.t
+  -> mode:Mode.t
+  -> label_mode:label_mode
+  -> Scale_degree.t
+  -> string

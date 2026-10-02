@@ -1,14 +1,12 @@
 open! Base
 open Fret_not
 
-let note degree =
-  Slot.Note { Degree_reference.degree; octave = 0; alteration = 0 }
-;;
+let note degree = Slot.Note (Degree_reference.natural ~degree ~octave:0)
 
 let as_degrees chunk =
   List.map chunk ~f:(function
     | Slot.Rest -> None
-    | Slot.Note (dr : Degree_reference.t) -> Some dr.degree)
+    | Slot.Note (dr : Degree_reference.t) -> Some (Degree_reference.degree dr))
 ;;
 
 let applying_a_i_iv_v_progression_reinterprets_a_bare_tonic_chunk () =

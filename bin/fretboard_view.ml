@@ -105,8 +105,8 @@ let draw_centered_text (config : Fretboard_view_config.t) text ~center_x
     config.label_font_size color
 ;;
 
-let draw_in_key_dot (config : Fretboard_view_config.t) ~label_mode ~dim
-    (scale_degree : Scale_degree.t) ~center_x ~center_y =
+let draw_in_key_dot (config : Fretboard_view_config.t) ~root ~mode ~label_mode
+    ~dim (scale_degree : Scale_degree.t) ~center_x ~center_y =
   let shade color =
     if dim then Raylib.fade color config.dimmed_alpha else color
   in
@@ -118,7 +118,8 @@ let draw_in_key_dot (config : Fretboard_view_config.t) ~label_mode ~dim
     Raylib.draw_circle_lines center_x center_y config.root_halo_radius
       (shade Raylib.Color.black);
   draw_centered_text config
-    (Fretboard_view_state.position_label_text ~label_mode scale_degree)
+    (Fretboard_view_state.position_label_text ~root ~mode ~label_mode
+       scale_degree)
     ~center_x ~center_y
     ~color:(shade (ui_accent_text ()))
 ;;
@@ -136,6 +137,8 @@ let draw_fret_positions (config : Fretboard_view_config.t)
     Fretboard_view_state.selected_position state ~config
   in
   let scale_degrees = Fretboard_view_state.scale_degrees state in
+  let scale_root = Fretboard_view_state.scale_root state in
+  let scale_mode = Fretboard_view_state.scale_mode state in
   let label_mode =
     Fretboard_view_state.label_mode_of_index state.label_mode_index
   in
@@ -151,7 +154,9 @@ let draw_fret_positions (config : Fretboard_view_config.t)
         in
         let scale_degree =
           List.find_exn scale_degrees ~f:(fun (d : Scale_degree.t) ->
-              Pitch_class.equal d.pitch_class pitch_class)
+              Pitch_class.equal
+                (Scale_degree.pitch_class ~root:scale_root ~mode:scale_mode d)
+                pitch_class)
         in
         let dim =
           match selected_position with
@@ -159,7 +164,8 @@ let draw_fret_positions (config : Fretboard_view_config.t)
           | Some positions ->
               not (List.mem positions position ~equal:Fretboard_position.equal)
         in
-        draw_in_key_dot config ~label_mode ~dim scale_degree ~center_x ~center_y
+        draw_in_key_dot config ~root:scale_root ~mode:scale_mode ~label_mode
+          ~dim scale_degree ~center_x ~center_y
       else draw_off_key_dot config ~center_x ~center_y
     done
   done

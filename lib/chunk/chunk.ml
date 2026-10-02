@@ -5,10 +5,12 @@ type t = Slot.t list
 let equal = List.equal Slot.equal
 
 let reframe_degree_reference (dr : Degree_reference.t) ~root_degree =
-  let raw_degree = dr.degree - 1 + (root_degree - 1) in
-  { Degree_reference.degree = (raw_degree % 7) + 1
-  ; octave = dr.octave + (raw_degree / 7)
-  ; alteration = dr.alteration
+  let raw_degree = Degree_reference.degree dr - 1 + (root_degree - 1) in
+  { Degree_reference.scale_degree =
+      Scale_degree.create
+        ~degree:((raw_degree % 7) + 1)
+        ~alteration:(Degree_reference.alteration dr)
+  ; octave = Degree_reference.octave dr + (raw_degree / 7)
   }
 ;;
 

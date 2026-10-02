@@ -81,17 +81,16 @@ let position_options_arpeggio_has_all_plus_three_inversions () =
 ;;
 
 let position_label_text_shows_degree_number_or_note_name () =
-  let scale_degree : Scale_degree.t =
-    { degree = 1; pitch_class = Pitch_class.c }
-  in
+  let scale_degree : Scale_degree.t = Scale_degree.natural ~degree:1 in
   Alcotest.(check string)
     "degree number" "1"
-    (Fretboard_view_state.position_label_text
-       ~label_mode:Fretboard_view_state.Degree_number scale_degree);
+    (Fretboard_view_state.position_label_text ~root:Pitch_class.c
+       ~mode:Mode.Ionian ~label_mode:Fretboard_view_state.Degree_number
+       scale_degree);
   Alcotest.(check string)
     "note name" "C"
-    (Fretboard_view_state.position_label_text
-       ~label_mode:Fretboard_view_state.Note_name scale_degree)
+    (Fretboard_view_state.position_label_text ~root:Pitch_class.c
+       ~mode:Mode.Ionian ~label_mode:Fretboard_view_state.Note_name scale_degree)
 ;;
 
 let index_converters_round_trip () =

@@ -37,13 +37,11 @@ let root_offset_semitones t =
   List.nth_exn major_scale_intervals (rotation_index t)
 ;;
 
-let degrees t ~root =
+let pitch_classes t ~root =
   let parent_major_root = Pitch_class.add root (-root_offset_semitones t) in
   let parent_scale =
     List.map major_scale_intervals ~f:(Pitch_class.add parent_major_root)
   in
   let idx = rotation_index t in
-  let rotated = List.drop parent_scale idx @ List.take parent_scale idx in
-  List.mapi rotated ~f:(fun i pitch_class ->
-      { Scale_degree.degree = i + 1; pitch_class })
+  List.drop parent_scale idx @ List.take parent_scale idx
 ;;

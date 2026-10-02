@@ -1,22 +1,28 @@
 open! Base
 
 type t =
-  { degree : int
+  { scale_degree : Scale_degree.t
   ; octave : int
-  ; alteration : int
   }
 
+let create ~scale_degree ~octave = { scale_degree; octave }
+
+let natural ~degree ~octave =
+  create ~scale_degree:(Scale_degree.natural ~degree) ~octave
+;;
+
+let scale_degree t = t.scale_degree
+let degree t = t.scale_degree.degree
+let alteration t = t.scale_degree.alteration
+let octave t = t.octave
+
 let equal a b =
-  Int.equal a.degree b.degree
+  Scale_degree.equal a.scale_degree b.scale_degree
   && Int.equal a.octave b.octave
-  && Int.equal a.alteration b.alteration
 ;;
 
 let compare a b =
-  match Int.compare a.degree b.degree with
-  | 0 -> (
-      match Int.compare a.octave b.octave with
-      | 0 -> Int.compare a.alteration b.alteration
-      | nonzero -> nonzero)
+  match Scale_degree.compare a.scale_degree b.scale_degree with
+  | 0 -> Int.compare a.octave b.octave
   | nonzero -> nonzero
 ;;

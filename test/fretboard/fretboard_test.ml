@@ -8,7 +8,7 @@ let degree_one_octave_zero_is_unreachable_near_open_low_e () =
   let positions =
     Fretboard.to_positions ~key:c_major ~mode:Mode.Ionian
       ~tuning:Tuning.standard ~anchor_position:anchor_open_low_e
-      { Degree_reference.degree = 1; octave = 0; alteration = 0 }
+      (Degree_reference.natural ~degree:1 ~octave:0)
   in
   Alcotest.(check int)
     "no reachable C at octave 0 near open low E" 0 (List.length positions)
@@ -18,7 +18,7 @@ let degree_one_octave_one_is_reachable_on_two_strings_nearest_first () =
   let positions =
     Fretboard.to_positions ~key:c_major ~mode:Mode.Ionian
       ~tuning:Tuning.standard ~anchor_position:anchor_open_low_e
-      { Degree_reference.degree = 1; octave = 1; alteration = 0 }
+      (Degree_reference.natural ~degree:1 ~octave:1)
   in
   Alcotest.(check (list (pair int int)))
     "A string fret 3 (closer to the anchor) before low E fret 8"
@@ -28,7 +28,7 @@ let degree_one_octave_one_is_reachable_on_two_strings_nearest_first () =
 ;;
 
 let degree_reference_round_trips_through_the_same_anchor () =
-  let dr : Degree_reference.t = { degree = 1; octave = 1; alteration = 0 } in
+  let dr : Degree_reference.t = Degree_reference.natural ~degree:1 ~octave:1 in
   let position =
     List.hd_exn
       (Fretboard.to_positions ~key:c_major ~mode:Mode.Ionian
@@ -58,7 +58,7 @@ let full_c_major_scale_positions () =
       List.concat_map [ 1; 2; 3; 4; 5; 6; 7 ] ~f:(fun degree ->
           Fretboard.to_positions ~key:c_major ~mode:Mode.Ionian
             ~tuning:Tuning.standard ~anchor_position:anchor_open_low_e
-            { Degree_reference.degree; octave; alteration = 0 }))
+            (Degree_reference.natural ~degree ~octave)))
   |> List.filter ~f:(fun (p : Fretboard_position.t) -> p.fret <= 12)
 ;;
 
@@ -303,7 +303,8 @@ let pentatonic_positions_in_window_covers_only_five_pitch_classes () =
   in
   let expected_pitch_classes =
     Fretboard.pentatonic_degrees ~key:c_major
-    |> List.map ~f:(fun (d : Scale_degree.t) -> d.pitch_class)
+    |> List.map ~f:(fun (d : Scale_degree.t) ->
+        Scale_degree.pitch_class ~root:Pitch_class.c ~mode:Mode.Ionian d)
     |> List.dedup_and_sort ~compare:Pitch_class.compare
   in
   Alcotest.(check bool)
@@ -378,7 +379,8 @@ let arpeggio_positions_in_window_covers_only_three_pitch_classes () =
   in
   let expected_pitch_classes =
     Fretboard.arpeggio_degrees ~key:c_major
-    |> List.map ~f:(fun (d : Scale_degree.t) -> d.pitch_class)
+    |> List.map ~f:(fun (d : Scale_degree.t) ->
+        Scale_degree.pitch_class ~root:Pitch_class.c ~mode:Mode.Ionian d)
     |> List.dedup_and_sort ~compare:Pitch_class.compare
   in
   Alcotest.(check bool)

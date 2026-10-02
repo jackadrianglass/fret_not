@@ -10,6 +10,3 @@ type t =
   }
 
 val default : t
-(** canvas_width and tuning intentionally aren't config fields here - the tab
-    view shares those with Fretboard_view_config at composition time rather than
-    storing its own possibly-diverging copy. *)

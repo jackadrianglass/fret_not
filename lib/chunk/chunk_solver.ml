@@ -4,12 +4,6 @@ let distance (a : Fretboard_position.t) (b : Fretboard_position.t) =
   Int.abs (a.fret - b.fret) + Int.abs (a.string_index - b.string_index)
 ;;
 
-(* A real, ever-increasing semitone height for this degree - its pitch class
-   (mod 12) plus a full 12 semitones per octave the degree itself carries.
-   Two degrees a Chunk was authored with an interval between (e.g. reframed
-   onto a new chord root, per Chunk.reframe) keep that same interval here,
-   since reframing only ever shifts every degree in a chunk by the same
-   amount. *)
 let absolute_semitone ~key ~mode (dr : Degree_reference.t) =
   Pitch_class.to_int (Fretboard.target_pitch_class ~key ~mode dr)
   + (12 * dr.octave)

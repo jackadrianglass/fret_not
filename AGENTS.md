@@ -21,30 +21,6 @@ Assume the shell you're already running in is a `devenv shell` — `dune`, `ocam
 
 - [`contributing/coding-guidelines.md`](contributing/coding-guidelines.md) — no comments, top-down flow built from bottom-up pieces, functional-first with computation kept separate from the raylib/raygui shell, testing the computations rather than the shell, and general craftsmanship. Read it before writing or reviewing code, not just when something looks off.
 
-## Work log
-
-`worklog/` holds one directory per slice of work actually tackled or presently in progress — `<idx>-<name>`, the index incrementing over time in the order work started. This is a record, not a plan: order reflects when something was picked up, not a sequence laid out in advance, and there's no dependency graph between entries. Each directory carries:
-
-- `plan.md` — what we're trying to make (kept narrow in scope), a todo list of anticipated changes, a running Q&A log, and any external references. Written before implementation starts, revised as understanding shifts.
-- `change-log.md` — one short, focused line per change, appended as work actually happens (not predicted in advance — that's what the plan's todo list is for).
-- `conversation.md` — a narrative recap of how the plan evolved, written once the work is done.
-- Anything else the work needs.
-
-`todo.md` at the root holds ideas that haven't been started — the brainstormed backlog to pull from when picking up new work, and where anything deferred mid-project lands. Grouped loosely by theme for scanability; the grouping and its order carry no priority and no formal dependency. When an idea graduates into an active `worklog/` entry, drop it from `todo.md`.
-
-## Starting a new piece of work
-
-1. Check `todo.md` for a matching idea and pull its context if there's a fit.
-2. Create `worklog/<idx>-current/` (next index; "current" is a placeholder — parallel in-flight entries just take different indices, so no collision). Don't settle on a real name yet.
-3. Draft `plan.md`'s Plan and Changes sections from the request as understood so far, then pause for review.
-4. Loop: append open questions to `plan.md`, prompt for review, fill in answers under each question as they come back, revise the plan — repeat until it's something worth executing.
-5. Get an explicit go-ahead before implementing.
-6. While implementing, append one-liners to `change-log.md` as changes land.
-7. Once implementation is done, prompt for exploration and feedback without pre-explaining what to look at or for.
-8. Rename the directory from `-current` to a real descriptive name once scope has actually settled (as soon as the plan stabilizes — no need to wait for the work to finish), and write `conversation.md` as a narrative recap once it's done.
-
-Write `plan.md`, `change-log.md`, and `conversation.md` in one voice, as a single project record — not a transcript between two parties. `plan.md`'s Questions section is the deliberate exception, since it's structurally a Q&A exchange.
-
 ## Ask questions
 
 I want to be in the loop on what's getting built, not find out after the fact. If a plan doesn't spell out a decision, ask instead of guessing and moving on — including small stuff. There's no dumb question here, and asking costs a lot less than me finding a wrong assumption baked in later.

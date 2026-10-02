@@ -55,16 +55,9 @@ let to_positions ~key ~mode ~tuning ~(anchor_position : Fretboard_position.t)
     ~octave:dr.octave
 ;;
 
-(* `/` truncates toward zero, so a plain a/b would round the wrong way for
-   negative octave bounds; these stay exact because a % b (Base's %, always
-   same sign as b) makes the subtraction land on a multiple of b first. *)
 let floor_div a b = (a - (a % b)) / b
 let ceil_div a b = -(floor_div (-a) b)
 
-(* Takes the target degrees' own Scale_degree.t (pitch class already
-   resolved) rather than degree numbers, so a filtered subset (e.g.
-   pentatonic's 5 degrees) can't be mis-indexed the way
-   target_pitch_class's `degree - 1` lookup would if handed one. *)
 let positions_in_window_for_degrees tuning
     ~(anchor_position : Fretboard_position.t) ~min_fret ~max_fret
     (degrees : Scale_degree.t list) =
@@ -177,10 +170,6 @@ let relative_semitone_of_pitch_class tuning ~pitch_class =
   % 12
 ;;
 
-(* "One scale-step past the start" of the low string - found by searching
-   one more step past its first note directly, rather than indexing into
-   an already-built position (which only works when there are >= 2 notes
-   on that string to index into). *)
 let one_step_past_low_string_start tuning ~diatonic_pitch_classes
     ~low_string_start_semitone =
   ascending_diatonic_positions tuning ~diatonic_pitch_classes ~string_index:0
@@ -190,10 +179,6 @@ let one_step_past_low_string_start tuning ~diatonic_pitch_classes
   |> relative_semitone_of_position tuning
 ;;
 
-(* Walking one scale-degree per position always covers exactly one octave
-   of whichever scale is in play, so the position count is just how many
-   degrees the scale has - 7 for a full diatonic walk, 5 for pentatonic,
-   3 for an arpeggio. *)
 let notes_per_string_positions ~notes_per_string ~diatonic_pitch_classes ~tuning
     ~root_relative_semitone =
   let string_count = Tuning.string_count tuning in

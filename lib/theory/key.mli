@@ -11,14 +11,7 @@ val tonic : t -> Pitch_class.t
 val quality : t -> quality
 
 val mode_root : t -> Mode.t -> Pitch_class.t
-(** The pitch class this mode's own tonic sits on within this key (e.g. Dorian's
-    root in the key of C major is D). *)
 
 val modes : t -> (Mode.t * Scale_degree.t list) list
-(** All 7 diatonic modes implied by this key, each paired with its own scale
-    degrees. A major key and its relative minor produce the same 7 (mode,
-    degrees) pairs. *)
 
 val mode_with_root : t -> Pitch_class.t -> Mode.t option
-(** Which of this key's 7 modes has its own root on this pitch class, if any
-    (always Some for a pitch class produced by mode_root itself). *)

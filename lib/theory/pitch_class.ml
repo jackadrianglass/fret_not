@@ -2,7 +2,7 @@ open! Base
 
 type t = int
 
-let of_int n = n % 12
+let of_int n = ((n % 12) + 12) % 12
 let to_int t = t
 let add t semitones = (t + semitones) % 12
 

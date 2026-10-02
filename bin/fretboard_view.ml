@@ -5,7 +5,7 @@ let layout (config : Fretboard_view_config.t) : Fretboard_layout.t =
   { canvas_width = Float.of_int config.canvas_width
   ; canvas_height = Float.of_int config.canvas_height
   ; margin = config.margin
-  ; string_count = Tuning.string_count config.tuning
+  ; string_count = Instrument.string_count config.instrument
   ; fret_count = config.fret_count
   }
 ;;
@@ -150,12 +150,14 @@ let draw_fret_positions (config : Fretboard_view_config.t)
       and center_y = shift top_y (to_pixels y) in
       if List.mem in_key position ~equal:Fretboard_position.equal then
         let pitch_class =
-          Tuning.pitch_class_at config.tuning ~string_index ~fret
+          Instrument.pitch_class_at config.instrument position
         in
         let scale_degree =
           List.find_exn scale_degrees ~f:(fun (d : Scale_degree.t) ->
               Pitch_class.equal
-                (Scale_degree.pitch_class ~root:scale_root ~mode:scale_mode d)
+                (Scale_degree.pitch_class
+                   ~root:Spelled_pitch.(pitch_class scale_root)
+                   ~mode:scale_mode d)
                 pitch_class)
         in
         let dim =
@@ -171,11 +173,15 @@ let draw_fret_positions (config : Fretboard_view_config.t)
   done
 ;;
 
-let tonic_options = "C;C#;D;D#;E;F;F#;G;G#;A;A#;B"
+let tonic_options =
+  String.concat ~sep:";"
+    (List.map Fretboard_view_state.tonics ~f:Spelled_pitch.to_string)
+;;
+
 let quality_options = "Major;Minor"
 let label_mode_options = "Degrees;Notes"
 let showing_text = "showing"
-let scale_options = "Diatonic;Pentatonic;Arpeggio"
+let scale_options = "Diatonic"
 
 let draw_controls (config : Fretboard_view_config.t)
     (state : Fretboard_view_state.t) ~offset_x ~offset_y :

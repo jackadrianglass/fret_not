@@ -1,8 +1,8 @@
 open! Base
 open Fret_not
 
-let c = Pitch_class.of_int 0
-let a = Pitch_class.of_int 9
+let c = Spelled_pitch.natural Letter.C
+let a = Spelled_pitch.natural Letter.A
 
 let c_major_key_produces_seven_modes_from_its_own_degrees () =
   let modes = Key.modes (Key.create ~tonic:c ~quality:Major) in

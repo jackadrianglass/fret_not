@@ -1,12 +1,21 @@
 open! Base
 open Fret_not
 
-let c_major = Key.create ~tonic:Pitch_class.c ~quality:Key.Major
+let c_major =
+  Key.create ~tonic:(Spelled_pitch.natural Letter.C) ~quality:Key.Major
+;;
+
+let instrument =
+  Instrument.create_uniform ~tuning:Tuning.standard ~fret_count:22
+;;
+
 let low_e_fret_8 : Fretboard_position.t = { string_index = 0; fret = 8 }
 
 let as_pairs shape =
   List.map shape ~f:(fun (p : Fretboard_position.t) -> (p.string_index, p.fret))
 ;;
+
+let semitone_of (p : Fretboard_position.t) = Instrument.semitone_at instrument p
 
 let distance_is_fret_delta_plus_string_delta () =
   Alcotest.(check int)
@@ -24,18 +33,15 @@ let root_third_fifth_ascends_within_the_fret_cap () =
     ]
   in
   let shapes =
-    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
-      ~tuning:Tuning.standard ~start_anchor:low_e_fret_8 ~max_fret_distance:7
-      degrees
+    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian ~instrument
+      ~start_anchor:low_e_fret_8 ~max_fret_distance:7 degrees
   in
   Alcotest.(check bool)
     "at least one valid shape found" true
     (not (List.is_empty shapes));
   let best = List.hd_exn shapes in
   let relative_semitones =
-    List.map best ~f:(fun (p : Fretboard_position.t) ->
-        Tuning.relative_semitone Tuning.standard ~string_index:p.string_index
-          ~fret:p.fret)
+    List.map best ~f:(fun (p : Fretboard_position.t) -> semitone_of p)
   in
   Alcotest.(check bool)
     "strictly ascending pitch" true
@@ -51,9 +57,8 @@ let every_consecutive_move_stays_within_the_fret_cap () =
     ]
   in
   let shapes =
-    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
-      ~tuning:Tuning.standard ~start_anchor:low_e_fret_8 ~max_fret_distance:7
-      degrees
+    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian ~instrument
+      ~start_anchor:low_e_fret_8 ~max_fret_distance:7 degrees
   in
   List.iter shapes ~f:(fun shape ->
       List.iter
@@ -72,9 +77,8 @@ let shapes_are_sorted_by_ascending_total_distance () =
     ]
   in
   let shapes =
-    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
-      ~tuning:Tuning.standard ~start_anchor:low_e_fret_8 ~max_fret_distance:7
-      degrees
+    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian ~instrument
+      ~start_anchor:low_e_fret_8 ~max_fret_distance:7 degrees
   in
   let totals =
     List.map shapes ~f:(fun shape ->
@@ -98,9 +102,8 @@ let an_impossibly_tight_cap_finds_nothing () =
     List.init 7 ~f:(fun i -> Degree_reference.natural ~degree:(i + 1) ~octave:0)
   in
   let shapes =
-    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
-      ~tuning:Tuning.standard ~start_anchor:low_e_fret_8 ~max_fret_distance:0
-      degrees
+    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian ~instrument
+      ~start_anchor:low_e_fret_8 ~max_fret_distance:0 degrees
   in
   Alcotest.(check (list (list (pair int int))))
     "no shape fits all 7 degrees into one fret column" []
@@ -109,9 +112,7 @@ let an_impossibly_tight_cap_finds_nothing () =
 
 let intervals_of shape =
   let relative_semitones =
-    List.map shape ~f:(fun (p : Fretboard_position.t) ->
-        Tuning.relative_semitone Tuning.standard ~string_index:p.string_index
-          ~fret:p.fret)
+    List.map shape ~f:(fun (p : Fretboard_position.t) -> semitone_of p)
   in
   List.map2_exn (List.drop_last_exn relative_semitones)
     (List.tl_exn relative_semitones) ~f:(fun a b -> b - a)
@@ -130,9 +131,8 @@ let a_reframed_wrapped_octave_still_lands_a_real_minor_third_up () =
     ]
   in
   let shapes =
-    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
-      ~tuning:Tuning.standard ~start_anchor:low_e_fret_8 ~max_fret_distance:7
-      degrees
+    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian ~instrument
+      ~start_anchor:low_e_fret_8 ~max_fret_distance:7 degrees
   in
   Alcotest.(check bool)
     "at least one valid shape found" true
@@ -153,9 +153,8 @@ let an_authored_octave_leap_is_preserved () =
     ]
   in
   let shapes =
-    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian
-      ~tuning:Tuning.standard ~start_anchor:low_e_fret_8 ~max_fret_distance:7
-      degrees
+    Chunk_solver.positions ~key:c_major ~mode:Mode.Ionian ~instrument
+      ~start_anchor:low_e_fret_8 ~max_fret_distance:7 degrees
   in
   Alcotest.(check bool)
     "at least one valid shape found" true

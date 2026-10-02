@@ -1,44 +1,49 @@
 open! Base
 
 let distance (a : Fretboard_position.t) (b : Fretboard_position.t) =
-  Int.abs (a.fret - b.fret) + Int.abs (a.string_index - b.string_index)
+  let reach = Reach.between a b in
+  reach.fret_span + reach.string_span
 ;;
 
 let absolute_semitone ~key ~mode (dr : Degree_reference.t) =
-  Pitch_class.to_int (Fretboard.target_pitch_class ~key ~mode dr)
-  + (12 * dr.octave)
+  Note.semitone (Fretboard.degree_note ~key ~mode dr)
 ;;
 
 let octave_sweep = List.range (-4) 5
 
-let first_note_candidates ~key ~mode ~tuning
+let first_note_candidates ~key ~mode ~instrument
     ~(start_anchor : Fretboard_position.t) ~max_fret_distance
     (dr : Degree_reference.t) =
   List.concat_map octave_sweep ~f:(fun octave ->
-      Fretboard.to_positions ~key ~mode ~tuning ~anchor_position:start_anchor
-        { dr with octave })
+      Fretboard.degree_positions ~instrument ~key ~mode { dr with octave })
   |> List.filter ~f:(fun (p : Fretboard_position.t) ->
       Int.abs (p.fret - start_anchor.fret) <= max_fret_distance)
 ;;
 
-let candidates_for_semitone ~tuning ~(near : Fretboard_position.t)
+let candidates_for_semitone ~instrument ~(near : Fretboard_position.t)
     ~max_fret_distance target_semitone =
-  List.init (Tuning.string_count tuning) ~f:Fn.id
+  List.init (Instrument.string_count instrument) ~f:Fn.id
   |> List.filter_map ~f:(fun string_index ->
-      let open_offset = Tuning.relative_semitone tuning ~string_index ~fret:0 in
-      let fret = target_semitone - open_offset in
-      if fret >= 0 && Int.abs (fret - near.fret) <= max_fret_distance then
-        Some { Fretboard_position.string_index; fret }
+      let fret =
+        target_semitone
+        - Tuning.open_semitone (Instrument.tuning instrument) ~string_index
+      in
+      let position = { Fretboard_position.string_index; fret } in
+      if
+        Instrument.playable instrument position
+        && Int.abs (fret - near.fret) <= max_fret_distance
+      then Some position
       else None)
 ;;
 
-let rec chain ~key ~mode ~tuning ~max_fret_distance ~offset anchor = function
+let rec chain ~key ~mode ~instrument ~max_fret_distance ~offset anchor =
+  function
   | [] -> [ [] ]
   | dr :: rest ->
       let target = absolute_semitone ~key ~mode dr + offset in
-      candidates_for_semitone ~tuning ~near:anchor ~max_fret_distance target
+      candidates_for_semitone ~instrument ~near:anchor ~max_fret_distance target
       |> List.concat_map ~f:(fun position ->
-          chain ~key ~mode ~tuning ~max_fret_distance ~offset position rest
+          chain ~key ~mode ~instrument ~max_fret_distance ~offset position rest
           |> List.map ~f:(fun tail -> position :: tail))
 ;;
 
@@ -50,18 +55,17 @@ let total_distance anchor shape =
   total
 ;;
 
-let positions ~key ~mode ~tuning ~start_anchor ~max_fret_distance = function
+let positions ~key ~mode ~instrument ~start_anchor ~max_fret_distance = function
   | [] -> [ [] ]
   | first :: rest ->
-      first_note_candidates ~key ~mode ~tuning ~start_anchor ~max_fret_distance
-        first
+      first_note_candidates ~key ~mode ~instrument ~start_anchor
+        ~max_fret_distance first
       |> List.concat_map ~f:(fun (position : Fretboard_position.t) ->
           let offset =
-            Tuning.relative_semitone tuning ~string_index:position.string_index
-              ~fret:position.fret
+            Instrument.semitone_at instrument position
             - absolute_semitone ~key ~mode first
           in
-          chain ~key ~mode ~tuning ~max_fret_distance ~offset position rest
+          chain ~key ~mode ~instrument ~max_fret_distance ~offset position rest
           |> List.map ~f:(fun tail -> position :: tail))
       |> List.sort ~compare:(fun a b ->
           Int.compare

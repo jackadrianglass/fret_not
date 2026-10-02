@@ -7,7 +7,7 @@ let () =
   let tab_area_height =
     Int.of_float
       (Tab_layout.canvas_height ~margin:tab_config.margin
-         ~string_count:(Tuning.string_count fretboard_config.tuning)
+         ~string_count:(Instrument.string_count fretboard_config.instrument)
          ~row_spacing:tab_config.row_spacing)
   in
   let content_height =
@@ -50,7 +50,7 @@ let () =
         in
         let fretboard_top_y =
           Tab_view.draw tab_config ~canvas_width:content_width
-            ~tuning:fretboard_config.tuning
+            ~tuning:(Instrument.tuning fretboard_config.instrument)
             ~top_y:(offset_y + fretboard_config.control_bar_height)
             ~offset_x ~notes
         in

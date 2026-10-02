@@ -6,7 +6,7 @@ type t =
   ; control_bar_height : int
   ; margin : float
   ; fret_count : int
-  ; tuning : Tuning.t
+  ; instrument : Instrument.t
   ; position_dot_radius : float
   ; root_halo_radius : float
   ; label_font_size : int

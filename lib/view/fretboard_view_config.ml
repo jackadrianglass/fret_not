@@ -6,7 +6,7 @@ type t =
   ; control_bar_height : int
   ; margin : float
   ; fret_count : int
-  ; tuning : Tuning.t
+  ; instrument : Instrument.t
   ; position_dot_radius : float
   ; root_halo_radius : float
   ; label_font_size : int
@@ -29,7 +29,8 @@ let default =
   ; control_bar_height = 50
   ; margin = 65.
   ; fret_count = 12
-  ; tuning = Tuning.standard
+  ; instrument =
+      Instrument.create_uniform ~tuning:Tuning.standard ~fret_count:22
   ; position_dot_radius = 14.
   ; root_halo_radius = 18.
   ; label_font_size = 14

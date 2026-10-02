@@ -15,6 +15,15 @@ let semitones = function
   | Double_flat -> -2
 ;;
 
+let of_semitones = function
+  | 0 -> Some Natural
+  | 1 -> Some Sharp
+  | -1 -> Some Flat
+  | 2 -> Some Double_sharp
+  | -2 -> Some Double_flat
+  | _ -> None
+;;
+
 let to_string = function
   | Natural -> ""
   | Sharp -> "#"

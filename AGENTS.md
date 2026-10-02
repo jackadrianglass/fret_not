@@ -36,32 +36,58 @@ lib/theory/        what the music is (no fretboard knowledge)
   pitch_class.ml   int mod 12 + names; all arithmetic goes through add/of_int
   alteration.ml    Natural | Sharp | Flat | Double_sharp | Double_flat — the
                    notational accidental of a scale degree
+  letter.ml        the 7 natural letters; only these have natural pitch classes
+  spelled_pitch.ml a letter + an alteration — SPN minus the octave (F#, Bb);
+                   semitone is NOT folded into an octave (Cb = -1, B# = 12),
+                   which is what lets Note handle the B/C octave wrap
+  note.ml          a spelled pitch + an octave — a full SPN note (C4, E2, Bb3);
+                   semitone = 12*(octave+1) + spelled semitone (C4 = 60, A4 = 69);
+                   pitch class is derived, never stored
   scale_degree.ml  {degree: 1..7; alteration} — a notated scale degree (1, b3,
                    #4). Pitch class is *derived* (pitch_class ~root ~mode),
                    never stored; the 7 degrees of any mode are the same
-                   notational objects (Scale_degree.diatonic)
+                   notational objects (Scale_degree.diatonic). spelled ~root
+                   turns a degree into an SPN spelling: letter = root letter +
+                   (degree - 1), alteration field is the accidental
   mode.ml          7 diatonic modes. Key insight: a mode is a *rotation* of the
                    major scale — root_offset_semitones indexes into
                    [0;2;4;5;7;9;11], pitch_classes() rotates the parent scale
-  key.ml            {tonic; Major|Minor}; mode_root() lifts tonic to any mode
-                   via the parent-major trick; mode_of_quality() maps
-                   Major/Minor to Ionian/Aeolian
+  key.ml            {tonic: Spelled_pitch.t; Major|Minor}; mode_root() lifts
+                   tonic to any mode via the parent-major trick and returns a
+                   *spelled* pitch; mode_of_quality() maps Major/Minor to
+                   Ionian/Aeolian
   pentatonic.ml    degree-subset presets (major/minor pentatonic)
   arpeggio.ml      degree-subset presets (triads)
 
 lib/fretboard/     the abstract↔concrete bridge
   fretboard_position.ml   {string_index; fret} — a concrete position
-  tuning.ml        open-string pitch classes; relative_semitone() gives an
-                   absolute semitone for any position (standard/drop D/7-string)
-  degree_reference.ml      {scale_degree; octave} — THE abstract note (a
-                   possibly-altered degree plus octave)
-  fretboard.ml     to_positions (degree→positions), positions_in_window
-                   (overlay generation), *_notes_per_string_positions
-                   (7/5/3/2/1-notes-per-string shape generators),
-                   of_position (extraction, degree←position), pentatonic/arpeggio
-                   degree helpers
-  degree_reference note: reframe math in chunk.ml shifts degree and octave
-                   together mod 7 — interval content is what's preserved
+  tuning.ml        open strings as absolute SPN notes (standard = E2 A2 D3 G3
+                   B3 E4), low to high. Absolute pitch is the point: pitch
+                   classes cannot distinguish E2 from E3 (Nashville tuning,
+                   bass, octave-displaced tunings). retune_string shifts one
+                   string and spells minimally; presets derive from standard.
+  instrument.ml    tuning + fret count *per string*. Everything that asks
+                   "can this be played here" (playable, range) goes through an
+                   instrument; semitone_at resolves a position to sounding
+                   pitch. This is where fret availability lives — not in view
+                   config.
+  degree_reference.ml      {scale_degree; octave} — THE abstract note. Octave
+                   is TONIC-anchored: octave 0 spans [tonic, tonic+12), so
+                   degree 1 octave 0 IS the tonic. interval()/note() resolve
+                   to sounding semitones / spelled SPN notes anchored at a
+                   root note.
+  fretboard.ml     the slim bridge: degree_positions (degree → every playable
+                   position, instrument-clamped), degree_at (position → degree
+                   option, None off-key), degrees_in_window (every in-key
+                   playable position WITH its degree). root_note is the octave
+                   register all resolution here is anchored to.
+  reach.ml         finger-stretch geometry: fret span, string span, and the
+                   sounding interval span between two positions (tuning-aware —
+                   cross-string stretch depends on the tuning's intervals)
+  shape.ml         notes-per-string shapes over ANY degree list — the diatonic
+                   degrees give the seven 3NPS positions, Pentatonic's the five
+                   2NPS, Arpeggio's the three 1NPS inversions. Shapes drop to
+                   their lowest playable octave; unplayable shapes are omitted.
 
 lib/chunk/         the movable pattern layer (newest, most conceptually central)
   slot.ml          Rest | Note of Degree_reference — slot presence IS the
@@ -71,10 +97,10 @@ lib/chunk/         the movable pattern layer (newest, most conceptually central)
   chord_progression.ml     int list of scale-degree roots (e.g. [1;4;5]);
                    apply_to_chunk repeats a chunk per chord via reframe
   chunk_solver.ml  positions() — every fingering of a reframed chunk, ranked by
-                   |fret delta| + |string delta| from a start anchor. CRITICAL
-                   invariant: resolve each note's absolute semitone
-                   (scale_degree+octave) FIRST, then choose only *which string*.
-                   Skipping this broke every non-tonic chord (see
+                   reach distance from a start anchor. CRITICAL invariant:
+                   resolve each note's absolute semitone (via
+                   Fretboard.degree_note) FIRST, then choose only *which
+                   string*. Skipping this broke every non-tonic chord (see
                    chunk_solver_test.ml regression tests)
 
 lib/layout/        pure geometry, no raylib, fully unit-tested
@@ -85,14 +111,16 @@ lib/layout/        pure geometry, no raylib, fully unit-tested
 
 lib/view/          renderable state/config (no raylib calls; testable)
   fretboard_view_config.ml  all presentation constants (window size, fonts,
-                            radii, spacing) — Fretboard_view.default
+                            radii, spacing) plus the Instrument (tuning +
+                            frets per string); fret_count is the drawn window
   tab_view_config.ml        tab presentation constants
   fretboard_view_state.ml   the UI state: dropdown indices (tonic, quality,
                             scale, position, label mode). Derives Key/Mode/
-                            highlighted positions/notes-per-string positions
-                            from indices. Dropdowns are index-based; changes
-                            of scale reset position_index (different-length
-                            position lists)
+                            highlighted positions (Fretboard.degrees_in_window)
+                            and the selected 3NPS shape (Shape.positions) from
+                            indices. Tonic dropdown indexes the tonics list
+                            (spelled, 12 entries). Scale is Diatonic-only for
+                            now; changes of scale reset position_index
 
 bin/               raylib/raygui rendering + the frame loop
   main.ml          frame loop: compute layout per frame (resize!), tab view on
@@ -107,11 +135,12 @@ bin/               raylib/raygui rendering + the frame loop
 
 ## Data flow (one frame)
 
-`Fretboard_view_state.t` (indices) → `key`/`mode`/`scale_degrees` →
-`Fretboard.positions_in_window` etc. (concrete positions) → `Tab_view.draw`
-(prints them as tab) + `Fretboard_view.draw_fret_positions` (dots) →
-`draw_controls` returns next `t`. Pure derivation, immutable state, state
-transitions only through the control-drawing pass.
+`Fretboard_view_state.t` (indices) → `key`/`mode` →
+`Fretboard.degrees_in_window` / `Shape.positions` (concrete positions, clamped
+to the config's Instrument) → `Tab_view.draw` (prints them as tab) +
+`Fretboard_view.draw_fret_positions` (dots) → `draw_controls` returns next `t`.
+Pure derivation, immutable state, state transitions only through the
+control-drawing pass.
 
 Chunk path (library code only, no UI yet): `Chunk.reframe` (harmonic
 resolution per chord) → `Chunk_solver.positions` (every fingering, sorted by

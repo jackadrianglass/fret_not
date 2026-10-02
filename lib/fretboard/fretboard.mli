@@ -1,58 +1,34 @@
 open! Base
 
-val target_pitch_class :
-  key:Key.t -> mode:Mode.t -> Degree_reference.t -> Pitch_class.t
+val root_note : key:Key.t -> Note.t
+(** The tonic as a note in octave register 0; the octave anchor all degree
+    resolution on this module is relative to. *)
 
-val to_positions :
-     key:Key.t
+val degree_note : key:Key.t -> mode:Mode.t -> Degree_reference.t -> Note.t
+
+val degree_positions :
+     instrument:Instrument.t
+  -> key:Key.t
   -> mode:Mode.t
-  -> tuning:Tuning.t
-  -> anchor_position:Fretboard_position.t
   -> Degree_reference.t
   -> Fretboard_position.t list
+(** Every playable position sounding that exact degree and octave, ascending by
+    string. *)
 
-val positions_in_window :
-     key:Key.t
+val degree_at :
+     instrument:Instrument.t
+  -> key:Key.t
   -> mode:Mode.t
-  -> tuning:Tuning.t
-  -> anchor_position:Fretboard_position.t
-  -> min_fret:int
-  -> max_fret:int
-  -> Fretboard_position.t list
-
-val pentatonic_degrees : key:Key.t -> Scale_degree.t list
-
-val pentatonic_positions_in_window :
-     key:Key.t
-  -> tuning:Tuning.t
-  -> anchor_position:Fretboard_position.t
-  -> min_fret:int
-  -> max_fret:int
-  -> Fretboard_position.t list
-
-val three_notes_per_string_positions :
-  key:Key.t -> mode:Mode.t -> tuning:Tuning.t -> Fretboard_position.t list list
-
-val two_notes_per_string_positions :
-  key:Key.t -> tuning:Tuning.t -> Fretboard_position.t list list
-
-val arpeggio_degrees : key:Key.t -> Scale_degree.t list
-
-val arpeggio_positions_in_window :
-     key:Key.t
-  -> tuning:Tuning.t
-  -> anchor_position:Fretboard_position.t
-  -> min_fret:int
-  -> max_fret:int
-  -> Fretboard_position.t list
-
-val one_note_per_string_positions :
-  key:Key.t -> tuning:Tuning.t -> Fretboard_position.t list list
-
-val of_position :
-     key:Key.t
-  -> mode:Mode.t
-  -> tuning:Tuning.t
-  -> anchor_position:Fretboard_position.t
   -> Fretboard_position.t
-  -> Degree_reference.t
+  -> Degree_reference.t option
+(** None when the position sounds off-key. *)
+
+val degrees_in_window :
+     instrument:Instrument.t
+  -> key:Key.t
+  -> mode:Mode.t
+  -> min_fret:int
+  -> max_fret:int
+  -> (Fretboard_position.t * Degree_reference.t) list
+(** Every playable in-key position with its degree, ascending by string then
+    fret. *)

@@ -4,10 +4,7 @@ type label_mode =
   | Degree_number
   | Note_name
 
-type scale =
-  | Diatonic
-  | Pentatonic
-  | Arpeggio
+type scale = Diatonic
 
 type t =
   { tonic_index : int
@@ -23,6 +20,10 @@ type t =
   }
 
 val initial : t
+
+val tonics : Spelled_pitch.t list
+(** One per tonic dropdown entry, indexed by [tonic_index]. *)
+
 val quality_of_index : int -> Key.quality
 val label_mode_of_index : int -> label_mode
 val scale_of_index : int -> scale
@@ -31,7 +32,7 @@ val key : t -> Key.t
 val mode : t -> Mode.t
 val scale_degrees : t -> Scale_degree.t list
 val scale_mode : t -> Mode.t
-val scale_root : t -> Pitch_class.t
+val scale_root : t -> Spelled_pitch.t
 
 val highlighted_positions :
   t -> config:Fretboard_view_config.t -> Fretboard_position.t list
@@ -39,20 +40,13 @@ val highlighted_positions :
 val three_notes_per_string_positions :
   t -> config:Fretboard_view_config.t -> Fretboard_position.t list list
 
-val two_notes_per_string_positions :
-  t -> config:Fretboard_view_config.t -> Fretboard_position.t list list
-
-val one_note_per_string_positions :
-  t -> config:Fretboard_view_config.t -> Fretboard_position.t list list
-
 val selected_position :
   t -> config:Fretboard_view_config.t -> Fretboard_position.t list option
 
-val mode_names_from : Mode.t -> string list
 val position_options : t -> string
 
 val position_label_text :
-     root:Pitch_class.t
+     root:Spelled_pitch.t
   -> mode:Mode.t
   -> label_mode:label_mode
   -> Scale_degree.t

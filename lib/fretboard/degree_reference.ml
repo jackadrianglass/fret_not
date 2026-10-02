@@ -26,3 +26,26 @@ let compare a b =
   | 0 -> Int.compare a.octave b.octave
   | nonzero -> nonzero
 ;;
+
+let interval ~root ~mode (dr : t) =
+  let pitch_class = Scale_degree.pitch_class ~root ~mode dr.scale_degree in
+  ((Pitch_class.to_int pitch_class - Pitch_class.to_int root + 12) % 12)
+  + (12 * dr.octave)
+;;
+
+let note ~root:(root_note : Note.t) ~mode (dr : t) =
+  let spelled =
+    Scale_degree.spelled
+      ~root:(Note.spelled_pitch root_note)
+      ~mode dr.scale_degree
+  in
+  let base =
+    (Pitch_class.to_int (Spelled_pitch.pitch_class spelled)
+    - Pitch_class.to_int (Note.pitch_class root_note)
+    + 12)
+    % 12
+  in
+  let sounding = Note.semitone root_note + base + (12 * dr.octave) in
+  Note.create ~spelled_pitch:spelled
+    ~octave:(((sounding - Spelled_pitch.semitone spelled) / 12) - 1)
+;;

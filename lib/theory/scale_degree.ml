@@ -27,3 +27,9 @@ let pitch_class ~root ~mode t =
   let base = List.nth_exn (Mode.pitch_classes mode ~root) (t.degree - 1) in
   Pitch_class.add base (Alteration.semitones t.alteration)
 ;;
+
+let spelled ~root ~mode t =
+  let letter = Letter.offset (Spelled_pitch.letter root) (t.degree - 1) in
+  Spelled_pitch.of_pitch_class_exn ~letter
+    ~pitch_class:(pitch_class ~root:(Spelled_pitch.pitch_class root) ~mode t)
+;;

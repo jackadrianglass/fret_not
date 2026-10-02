@@ -2,139 +2,119 @@ open! Base
 open Fret_not
 
 let c_major_state = Fretboard_view_state.initial
+let config = Fretboard_view_config.default
 
-let selected_position_is_none_at_position_index_zero () =
+let selected_position_follows_the_position_index () =
   Alcotest.(check bool)
-    "None when position_index is 0" true
+    "None at position_index 0" true
     (Option.is_none
-       (Fretboard_view_state.selected_position c_major_state
-          ~config:Fretboard_view_config.default))
-;;
-
-let selected_position_matches_three_notes_per_string_for_diatonic () =
+       (Fretboard_view_state.selected_position c_major_state ~config));
   let state = { c_major_state with position_index = 1 } in
   let expected =
     List.hd_exn
-      (Fretboard_view_state.three_notes_per_string_positions state
-         ~config:Fretboard_view_config.default)
+      (Fretboard_view_state.three_notes_per_string_positions state ~config)
   in
   Alcotest.(check bool)
-    "Diatonic position 1 matches three_notes_per_string_positions" true
+    "position_index 1 selects the first three-notes-per-string shape" true
     (Option.equal
        (List.equal Fretboard_position.equal)
        (Some expected)
-       (Fretboard_view_state.selected_position state
-          ~config:Fretboard_view_config.default))
+       (Fretboard_view_state.selected_position state ~config))
 ;;
 
-let selected_position_matches_two_notes_per_string_for_pentatonic () =
-  let state = { c_major_state with scale_index = 1; position_index = 1 } in
-  let expected =
-    List.hd_exn
-      (Fretboard_view_state.two_notes_per_string_positions state
-         ~config:Fretboard_view_config.default)
-  in
-  Alcotest.(check bool)
-    "Pentatonic position 1 matches two_notes_per_string_positions" true
-    (Option.equal
-       (List.equal Fretboard_position.equal)
-       (Some expected)
-       (Fretboard_view_state.selected_position state
-          ~config:Fretboard_view_config.default))
+let position_options_offer_all_plus_seven_shapes () =
+  Alcotest.(check string)
+    "All;1;..;7" "All;1;2;3;4;5;6;7"
+    (Fretboard_view_state.position_options c_major_state)
 ;;
 
-let selected_position_matches_one_note_per_string_for_arpeggio () =
-  let state = { c_major_state with scale_index = 2; position_index = 1 } in
-  let expected =
-    List.hd_exn
-      (Fretboard_view_state.one_note_per_string_positions state
-         ~config:Fretboard_view_config.default)
-  in
-  Alcotest.(check bool)
-    "Arpeggio position 1 matches one_note_per_string_positions" true
-    (Option.equal
-       (List.equal Fretboard_position.equal)
-       (Some expected)
-       (Fretboard_view_state.selected_position state
-          ~config:Fretboard_view_config.default))
-;;
-
-let position_options_diatonic_has_all_plus_seven_modes () =
+let tonics_index_like_the_pitch_classes_they_spell () =
   Alcotest.(check int)
-    "All + 7 modes" 8
-    (String.split (Fretboard_view_state.position_options c_major_state) ~on:';'
-    |> List.length)
+    "one tonic per dropdown entry" 12
+    (List.length Fretboard_view_state.tonics);
+  Alcotest.(check (list string))
+    "first three and last entries" [ "C"; "C#"; "D"; "B" ]
+    (List.map
+       [ List.nth_exn Fretboard_view_state.tonics 0
+       ; List.nth_exn Fretboard_view_state.tonics 1
+       ; List.nth_exn Fretboard_view_state.tonics 2
+       ; List.nth_exn Fretboard_view_state.tonics 11
+       ]
+       ~f:Spelled_pitch.to_string)
 ;;
 
-let position_options_pentatonic_has_all_plus_five () =
-  let state = { c_major_state with scale_index = 1 } in
-  Alcotest.(check string)
-    "All;1;2;3;4;5" "All;1;2;3;4;5"
-    (Fretboard_view_state.position_options state)
+let key_resolves_the_selected_tonic_spelling () =
+  let f_major =
+    Fretboard_view_state.key { c_major_state with tonic_index = 5 }
+  in
+  Alcotest.(check bool)
+    "tonic_index 5 is F" true
+    (Pitch_class.equal Pitch_class.f (Key.tonic_pitch_class f_major))
 ;;
 
-let position_options_arpeggio_has_all_plus_three_inversions () =
-  let state = { c_major_state with scale_index = 2 } in
-  Alcotest.(check string)
-    "All;Root;1st Inv;2nd Inv" "All;Root;1st Inv;2nd Inv"
-    (Fretboard_view_state.position_options state)
+let highlighted_positions_stay_in_key_and_on_the_instrument () =
+  let positions =
+    Fretboard_view_state.highlighted_positions c_major_state ~config
+  in
+  Alcotest.(check bool) "non-empty" true (not (List.is_empty positions));
+  Alcotest.(check bool)
+    "within the drawn fret window" true
+    (List.for_all positions ~f:(fun (p : Fretboard_position.t) ->
+         p.fret >= 0 && p.fret <= config.fret_count));
+  Alcotest.(check bool)
+    "playable on the instrument" true
+    (List.for_all positions ~f:(fun position ->
+         Instrument.playable config.instrument position));
+  let chromatic : Fretboard_position.t = { string_index = 0; fret = 6 } in
+  Alcotest.(check bool)
+    "off-key positions excluded" true
+    (not (List.mem positions chromatic ~equal:Fretboard_position.equal))
 ;;
 
 let position_label_text_shows_degree_number_or_note_name () =
-  let scale_degree : Scale_degree.t = Scale_degree.natural ~degree:1 in
+  let root = Spelled_pitch.natural Letter.C in
   Alcotest.(check string)
     "degree number" "1"
-    (Fretboard_view_state.position_label_text ~root:Pitch_class.c
-       ~mode:Mode.Ionian ~label_mode:Fretboard_view_state.Degree_number
-       scale_degree);
+    (Fretboard_view_state.position_label_text ~root ~mode:Mode.Ionian
+       ~label_mode:Fretboard_view_state.Degree_number
+       (Scale_degree.natural ~degree:1));
   Alcotest.(check string)
     "note name" "C"
-    (Fretboard_view_state.position_label_text ~root:Pitch_class.c
-       ~mode:Mode.Ionian ~label_mode:Fretboard_view_state.Note_name scale_degree)
+    (Fretboard_view_state.position_label_text ~root ~mode:Mode.Ionian
+       ~label_mode:Fretboard_view_state.Note_name
+       (Scale_degree.natural ~degree:1));
+  Alcotest.(check string)
+    "third of A major is spelled C#" "C#"
+    (Fretboard_view_state.position_label_text
+       ~root:(Spelled_pitch.natural Letter.A)
+       ~mode:Mode.Ionian ~label_mode:Fretboard_view_state.Note_name
+       (Scale_degree.natural ~degree:3))
 ;;
 
-let index_converters_round_trip () =
-  Alcotest.(check bool)
-    "0 -> Major" true
-    (Poly.equal (Fretboard_view_state.quality_of_index 0) Key.Major);
-  Alcotest.(check bool)
-    "1 -> Minor" true
-    (Poly.equal (Fretboard_view_state.quality_of_index 1) Key.Minor);
-  Alcotest.(check bool)
-    "0 -> Diatonic" true
-    (Poly.equal
-       (Fretboard_view_state.scale_of_index 0)
-       Fretboard_view_state.Diatonic);
-  Alcotest.(check bool)
-    "1 -> Pentatonic" true
-    (Poly.equal
-       (Fretboard_view_state.scale_of_index 1)
-       Fretboard_view_state.Pentatonic);
-  Alcotest.(check bool)
-    "2 -> Arpeggio" true
-    (Poly.equal
-       (Fretboard_view_state.scale_of_index 2)
-       Fretboard_view_state.Arpeggio)
+let scale_is_diatonic_at_every_index () =
+  List.iter [ 0; 1; 2 ] ~f:(fun index ->
+      Alcotest.(check bool)
+        (Printf.sprintf "scale_of_index %d" index)
+        true
+        (Poly.equal
+           (Fretboard_view_state.scale_of_index index)
+           Fretboard_view_state.Diatonic))
 ;;
 
 let tests =
-  [ Alcotest.test_case "selected_position is None at position_index 0" `Quick
-      selected_position_is_none_at_position_index_zero
-  ; Alcotest.test_case "selected_position matches 3nps for Diatonic" `Quick
-      selected_position_matches_three_notes_per_string_for_diatonic
-  ; Alcotest.test_case "selected_position matches 2nps for Pentatonic" `Quick
-      selected_position_matches_two_notes_per_string_for_pentatonic
-  ; Alcotest.test_case "selected_position matches 1nps for Arpeggio" `Quick
-      selected_position_matches_one_note_per_string_for_arpeggio
-  ; Alcotest.test_case "position_options: Diatonic has All + 7 modes" `Quick
-      position_options_diatonic_has_all_plus_seven_modes
-  ; Alcotest.test_case "position_options: Pentatonic has All + 5" `Quick
-      position_options_pentatonic_has_all_plus_five
-  ; Alcotest.test_case "position_options: Arpeggio has All + 3 inversions"
-      `Quick position_options_arpeggio_has_all_plus_three_inversions
+  [ Alcotest.test_case "selected_position follows the position index" `Quick
+      selected_position_follows_the_position_index
+  ; Alcotest.test_case "position_options offer All plus seven shapes" `Quick
+      position_options_offer_all_plus_seven_shapes
+  ; Alcotest.test_case "tonics index like the pitch classes they spell" `Quick
+      tonics_index_like_the_pitch_classes_they_spell
+  ; Alcotest.test_case "key resolves the selected tonic spelling" `Quick
+      key_resolves_the_selected_tonic_spelling
+  ; Alcotest.test_case "highlighted positions stay in key and on the instrument"
+      `Quick highlighted_positions_stay_in_key_and_on_the_instrument
   ; Alcotest.test_case "position_label_text shows degree number or note name"
       `Quick position_label_text_shows_degree_number_or_note_name
-  ; Alcotest.test_case "index converters round trip" `Quick
-      index_converters_round_trip
+  ; Alcotest.test_case "scale is Diatonic at every index" `Quick
+      scale_is_diatonic_at_every_index
   ]
 ;;

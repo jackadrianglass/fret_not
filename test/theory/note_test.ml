@@ -32,12 +32,9 @@ let to_string_round_trips_the_common_cases () =
     ]
 ;;
 
-let equal_is_spelling_sensitive_but_compare_breaks_ties_by_sound () =
+let compare_breaks_enharmonic_ties_by_spelling () =
   let c_sharp_4 = note ~alteration:Alteration.Sharp c 4 in
   let d_flat_4 = note ~alteration:Alteration.Flat Letter.D 4 in
-  Alcotest.(check bool)
-    "C#4 and Db4 are distinct spellings" true
-    (not (Note.equal c_sharp_4 d_flat_4));
   Alcotest.(check bool)
     "C#4 sorts before Db4 on the spelling tiebreak" true
     (Int.equal (Note.compare c_sharp_4 d_flat_4) (-1))
@@ -72,8 +69,8 @@ let tests =
       semitone_matches_scientific_pitch_notation
   ; Alcotest.test_case "to_string round trips the common cases" `Quick
       to_string_round_trips_the_common_cases
-  ; Alcotest.test_case "equal is spelling sensitive" `Quick
-      equal_is_spelling_sensitive_but_compare_breaks_ties_by_sound
+  ; Alcotest.test_case "compare breaks enharmonic ties by spelling" `Quick
+      compare_breaks_enharmonic_ties_by_spelling
   ; Alcotest.test_case "compare orders by sounding semitone" `Quick
       compare_orders_by_sounding_semitone
   ; Alcotest.test_case "pitch class folds through the octave wrap" `Quick

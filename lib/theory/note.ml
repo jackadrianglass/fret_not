@@ -4,6 +4,7 @@ type t =
   { spelled_pitch : Spelled_pitch.t
   ; octave : int
   }
+[@@deriving eq]
 
 let create ~spelled_pitch ~octave = { spelled_pitch; octave }
 
@@ -28,11 +29,8 @@ let to_string t =
 
 let shift_octave t n = { t with octave = t.octave + n }
 
-let equal a b =
-  Spelled_pitch.equal a.spelled_pitch b.spelled_pitch
-  && Int.equal a.octave b.octave
-;;
-
+(* Not derived: the order is by sounding semitone, not by the record
+   fields; spelling only breaks ties. *)
 let compare a b =
   match Int.compare (semitone a) (semitone b) with
   | 0 -> Spelled_pitch.compare a.spelled_pitch b.spelled_pitch

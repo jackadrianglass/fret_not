@@ -34,9 +34,10 @@ let scale_index_selects_the_degree_subset () =
   let arpeggio = Fretboard_view_state.scale_of_index 2 in
   Alcotest.(check bool)
     "indices pick the three scales" true
-    (Poly.equal diatonic Fretboard_view_state.Diatonic
-    && Poly.equal pentatonic Fretboard_view_state.Pentatonic
-    && Poly.equal arpeggio Fretboard_view_state.Arpeggio);
+    (Fretboard_view_state.equal_scale diatonic Fretboard_view_state.Diatonic
+    && Fretboard_view_state.equal_scale pentatonic
+         Fretboard_view_state.Pentatonic
+    && Fretboard_view_state.equal_scale arpeggio Fretboard_view_state.Arpeggio);
   Alcotest.(check int)
     "diatonic has 7 degrees" 7
     (List.length

@@ -27,7 +27,8 @@ dune build @fmt --auto-promote   # ocamlformat
 
 Build system: dune 3.23, `fret_not.opam` generated from `dune-project`
 (edit `dune-project`, not the opam file). Deps are deliberately tiny:
-`base`, `raylib`, `raygui`, `alcotest` (test only), `ocamlformat`.
+`base`, `raylib`, `raygui`, `ppx_deriving`, `alcotest` (test only),
+`ocamlformat`.
 
 ## Module map
 
@@ -193,9 +194,18 @@ them that aren't recoverable from the code itself.)
 
 - **Base, not Stdlib.** `base` v0.17 is the stdlib here: labeled function
   args (`List.map ~f:...`), no polymorphic compare/equal (each type exports
-  its own; `Poly.equal` for the rare structural case), `open! Base` per
+  its own), `open! Base` per
   file. Most OCaml snippets online assume `Stdlib` — check the Base API docs
   before trusting them.
+- **Derive `equal`/`compare`; don't hand-write structural ones.** Types carry
+  `[@@deriving eq]`/`[@@deriving ord]` (from `ppx_deriving`, wired as
+  `(preprocess ...)` in `lib/dune`) in BOTH the .ml and the .mli — the mli
+  attribute generates the `val` declarations, the ml one the implementations.
+  For non-`t` type names the generated function is suffixed
+  (`scale` -> `equal_scale`). Hand-write only when semantics differ from
+  structural: `Alteration.compare` (semitone order, not declaration order) and
+  `Note.compare` (sounding-semitone order, spelling breaks ties) — and say why
+  at the definition.
 - **dune's built-in package manager, not opam switches.** Dependency
   versions (OCaml 5.4.1, raylib/raygui 2.2.2, base, alcotest) are pinned in
   the committed `dune.lock/`, not by an opam switch. To change a dep: edit

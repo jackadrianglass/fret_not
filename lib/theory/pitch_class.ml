@@ -1,18 +1,16 @@
 open! Base
 
-type t = int
+type t = int [@@deriving eq, ord]
 
 let of_int n = ((n % 12) + 12) % 12
 let to_int t = t
-let add t semitones = (t + semitones) % 12
+let add t semitones = of_int (t + semitones)
 
 let names =
   [| "C"; "C#"; "D"; "D#"; "E"; "F"; "F#"; "G"; "G#"; "A"; "A#"; "B" |]
 ;;
 
 let to_string t = names.(t)
-let equal = Int.equal
-let compare = Int.compare
 let c = of_int 0
 let c_sharp = of_int 1
 let d = of_int 2

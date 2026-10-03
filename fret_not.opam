@@ -10,6 +10,7 @@ depends: [
   "base"
   "raylib"
   "raygui"
+  "ppx_deriving"
   "alcotest" {with-test}
   "ocamlformat"
   "odoc" {with-doc}

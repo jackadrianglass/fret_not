@@ -1,8 +1,6 @@
 open! Base
 
-type t = Slot.t list
-
-let equal = List.equal Slot.equal
+type t = Slot.t list [@@deriving eq]
 
 let reframe_degree_reference (dr : Degree_reference.t) ~root_degree =
   let raw_degree = Degree_reference.degree dr - 1 + (root_degree - 1) in

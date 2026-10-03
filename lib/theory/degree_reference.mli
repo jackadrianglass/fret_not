@@ -4,6 +4,7 @@ type t =
   { scale_degree : Scale_degree.t
   ; octave : int
   }
+[@@deriving eq]
 
 val create : scale_degree:Scale_degree.t -> octave:int -> t
 val natural : degree:int -> octave:int -> t
@@ -11,7 +12,6 @@ val scale_degree : t -> Scale_degree.t
 val degree : t -> int
 val alteration : t -> Alteration.t
 val octave : t -> int
-val equal : t -> t -> bool
 
 val interval : root:Pitch_class.t -> mode:Mode.t -> t -> int
 (** Semitones above the tonic. The octave is tonic-anchored: octave 0 spans from

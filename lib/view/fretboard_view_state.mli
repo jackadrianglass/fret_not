@@ -8,6 +8,7 @@ type scale =
   | Diatonic
   | Pentatonic
   | Arpeggio
+[@@deriving eq]
 
 type t =
   { tonic_index : int

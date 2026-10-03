@@ -4,6 +4,7 @@ type t =
   { letter : Letter.t
   ; alteration : Alteration.t
   }
+[@@deriving eq, ord]
 
 val create : letter:Letter.t -> alteration:Alteration.t -> t
 val natural : Letter.t -> t
@@ -24,5 +25,3 @@ val alteration_for :
 
 val of_pitch_class_exn : letter:Letter.t -> pitch_class:Pitch_class.t -> t
 val to_string : t -> string
-val equal : t -> t -> bool
-val compare : t -> t -> int

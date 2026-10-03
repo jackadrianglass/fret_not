@@ -4,6 +4,7 @@ type t =
   { fret_span : int
   ; string_span : int
   }
+[@@deriving ord]
 
 let between (a : Fretboard_position.t) (b : Fretboard_position.t) =
   { fret_span = Int.abs (a.fret - b.fret)
@@ -32,10 +33,4 @@ let semitone_span ~instrument (a : Fretboard_position.t)
     (b : Fretboard_position.t) =
   Int.abs
     (Instrument.semitone_at instrument a - Instrument.semitone_at instrument b)
-;;
-
-let compare a b =
-  match Int.compare a.fret_span b.fret_span with
-  | 0 -> Int.compare a.string_span b.string_span
-  | c -> c
 ;;

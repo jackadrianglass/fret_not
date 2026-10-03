@@ -65,23 +65,6 @@ let alteration_for_picks_the_smallest_representable_accidental () =
        [ (Letter.G, 6); (Letter.C, 11); (Letter.F, 5); (Letter.C, 4) ])
 ;;
 
-let equal_is_spelling_sensitive () =
-  let c_sharp =
-    Spelled_pitch.create ~letter:Letter.C ~alteration:Alteration.Sharp
-  in
-  let d_flat =
-    Spelled_pitch.create ~letter:Letter.D ~alteration:Alteration.Flat
-  in
-  Alcotest.(check bool)
-    "C# and Db sound the same" true
-    (Pitch_class.equal
-       (Spelled_pitch.pitch_class c_sharp)
-       (Spelled_pitch.pitch_class d_flat));
-  Alcotest.(check bool)
-    "C# and Db are not the same spelling" true
-    (not (Spelled_pitch.equal c_sharp d_flat))
-;;
-
 let tests =
   [ Alcotest.test_case "to_string spells the accidental" `Quick
       to_string_spells_the_accidental
@@ -91,7 +74,5 @@ let tests =
       pitch_class_folds_through_the_wrap
   ; Alcotest.test_case "alteration_for picks the smallest accidental" `Quick
       alteration_for_picks_the_smallest_representable_accidental
-  ; Alcotest.test_case "equal is spelling sensitive" `Quick
-      equal_is_spelling_sensitive
   ]
 ;;

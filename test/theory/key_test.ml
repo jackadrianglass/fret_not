@@ -57,10 +57,10 @@ let mode_pitch_classes_are_the_modes_scale () =
 let mode_of_quality_round_trips () =
   Alcotest.(check bool)
     "Major -> Ionian" true
-    (Poly.equal (Key.mode_of_quality Key.Major) Mode.Ionian);
+    (Mode.equal (Key.mode_of_quality Key.Major) Mode.Ionian);
   Alcotest.(check bool)
     "Minor -> Aeolian" true
-    (Poly.equal (Key.mode_of_quality Key.Minor) Mode.Aeolian)
+    (Mode.equal (Key.mode_of_quality Key.Minor) Mode.Aeolian)
 ;;
 
 let tests =

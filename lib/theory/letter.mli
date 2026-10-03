@@ -8,6 +8,7 @@ type t =
   | G
   | A
   | B
+[@@deriving eq, ord]
 
 val all : t list
 val index : t -> int
@@ -15,5 +16,3 @@ val of_index : int -> t
 val offset : t -> int -> t
 val to_pitch_class : t -> Pitch_class.t
 val to_string : t -> string
-val equal : t -> t -> bool
-val compare : t -> t -> int

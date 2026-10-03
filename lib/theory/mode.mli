@@ -8,6 +8,7 @@ type t =
   | Mixolydian
   | Aeolian
   | Locrian
+[@@deriving eq]
 
 val all : t list
 val name : t -> string

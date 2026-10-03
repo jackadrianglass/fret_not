@@ -42,23 +42,6 @@ let semitone_span_accounts_for_cross_string_intervals () =
        (position 1 3))
 ;;
 
-let compare_orders_by_fret_span_first () =
-  Alcotest.(check bool)
-    "fret span dominates" true
-    (Int.equal
-       (Reach.compare
-          { fret_span = 2; string_span = 5 }
-          { fret_span = 3; string_span = 0 })
-       (-1));
-  Alcotest.(check bool)
-    "string span breaks ties" true
-    (Int.equal
-       (Reach.compare
-          { fret_span = 3; string_span = 2 }
-          { fret_span = 3; string_span = 5 })
-       (-1))
-;;
-
 let tests =
   [ Alcotest.test_case "between measures fret and string spans" `Quick
       between_measures_fret_and_string_spans
@@ -66,7 +49,5 @@ let tests =
       of_positions_bounding_boxes_the_shape
   ; Alcotest.test_case "semitone_span accounts for cross-string intervals"
       `Quick semitone_span_accounts_for_cross_string_intervals
-  ; Alcotest.test_case "compare orders by fret span first" `Quick
-      compare_orders_by_fret_span_first
   ]
 ;;

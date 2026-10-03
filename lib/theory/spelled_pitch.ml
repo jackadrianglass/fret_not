@@ -4,6 +4,7 @@ type t =
   { letter : Letter.t
   ; alteration : Alteration.t
   }
+[@@deriving eq, ord]
 
 let create ~letter ~alteration = { letter; alteration }
 let natural letter = { letter; alteration = Alteration.Natural }
@@ -39,14 +40,4 @@ let of_pitch_class_exn ~letter ~pitch_class =
            (Printf.sprintf "no accidental makes %s sound as %s"
               (Letter.to_string letter)
               (Pitch_class.to_string pitch_class)))
-;;
-
-let equal a b =
-  Letter.equal a.letter b.letter && Alteration.equal a.alteration b.alteration
-;;
-
-let compare a b =
-  match Letter.compare a.letter b.letter with
-  | 0 -> Alteration.compare a.alteration b.alteration
-  | nonzero -> nonzero
 ;;

@@ -8,6 +8,7 @@ type t =
   | G
   | A
   | B
+[@@deriving eq, ord]
 
 let all = [ C; D; E; F; G; A; B ]
 
@@ -43,6 +44,3 @@ let to_string = function
   | A -> "A"
   | B -> "B"
 ;;
-
-let equal a b = Int.equal (index a) (index b)
-let compare a b = Int.compare (index a) (index b)

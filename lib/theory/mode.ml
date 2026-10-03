@@ -8,6 +8,7 @@ type t =
   | Mixolydian
   | Aeolian
   | Locrian
+[@@deriving eq]
 
 let all = [ Ionian; Dorian; Phrygian; Lydian; Mixolydian; Aeolian; Locrian ]
 

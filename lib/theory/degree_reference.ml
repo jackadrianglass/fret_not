@@ -4,6 +4,7 @@ type t =
   { scale_degree : Scale_degree.t
   ; octave : int
   }
+[@@deriving eq]
 
 let create ~scale_degree ~octave = { scale_degree; octave }
 
@@ -15,11 +16,6 @@ let scale_degree t = t.scale_degree
 let degree t = t.scale_degree.degree
 let alteration t = t.scale_degree.alteration
 let octave t = t.octave
-
-let equal a b =
-  Scale_degree.equal a.scale_degree b.scale_degree
-  && Int.equal a.octave b.octave
-;;
 
 let interval ~root ~mode (dr : t) =
   let pitch_class = Scale_degree.pitch_class ~root ~mode dr.scale_degree in

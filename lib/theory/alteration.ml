@@ -6,6 +6,7 @@ type t =
   | Flat
   | Double_sharp
   | Double_flat
+[@@deriving eq]
 
 let semitones = function
   | Natural -> 0
@@ -32,15 +33,5 @@ let to_string = function
   | Double_flat -> "bb"
 ;;
 
-let equal a b =
-  match (a, b) with
-  | Natural, Natural
-  | Sharp, Sharp
-  | Flat, Flat
-  | Double_sharp, Double_sharp
-  | Double_flat, Double_flat ->
-      true
-  | _ -> false
-;;
-
+(* Not derived: declaration order is not semitone order. *)
 let compare a b = Int.compare (semitones a) (semitones b)

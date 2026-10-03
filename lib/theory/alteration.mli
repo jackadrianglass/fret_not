@@ -6,9 +6,11 @@ type t =
   | Flat
   | Double_sharp
   | Double_flat
+[@@deriving eq]
 
 val semitones : t -> int
 val of_semitones : int -> t option
 val to_string : t -> string
-val equal : t -> t -> bool
+
 val compare : t -> t -> int
+(** By semitones, not declaration order. *)

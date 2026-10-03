@@ -76,8 +76,9 @@ let scale_degrees t =
   in
   match scale_of_index t.scale_index with
   | Diatonic -> Scale_degree.diatonic
-  | Pentatonic -> preset ~major:Pentatonic.major ~minor:Pentatonic.minor
-  | Arpeggio -> preset ~major:Arpeggio.major ~minor:Arpeggio.minor
+  | Pentatonic ->
+      preset ~major:Scales.pentatonic_major ~minor:Scales.pentatonic_minor
+  | Arpeggio -> preset ~major:Scales.arpeggio_major ~minor:Scales.arpeggio_minor
 ;;
 
 let notes_per_string t =

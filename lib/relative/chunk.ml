@@ -1,6 +1,11 @@
 open! Base
 
-type t = Slot.t list [@@deriving eq]
+type slot =
+  | Rest
+  | Note of Degree_reference.t
+[@@deriving eq]
+
+type t = slot list [@@deriving eq]
 
 let reframe_degree_reference (dr : Degree_reference.t) ~root_degree =
   let raw_degree = Degree_reference.degree dr - 1 + (root_degree - 1) in
@@ -14,6 +19,10 @@ let reframe_degree_reference (dr : Degree_reference.t) ~root_degree =
 
 let reframe t ~root_degree =
   List.map t ~f:(function
-    | Slot.Rest -> Slot.Rest
-    | Slot.Note dr -> Slot.Note (reframe_degree_reference dr ~root_degree))
+    | Rest -> Rest
+    | Note dr -> Note (reframe_degree_reference dr ~root_degree))
+;;
+
+let apply_progression t (root_degrees : int list) =
+  List.map root_degrees ~f:(fun root_degree -> reframe t ~root_degree)
 ;;

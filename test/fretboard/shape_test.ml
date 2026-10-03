@@ -137,7 +137,7 @@ let shapes_reaching_past_the_fret_limit_are_omitted () =
 let pentatonic_degrees_drive_two_notes_per_string_shapes () =
   let shapes =
     Shape.positions ~instrument ~key:c_major ~mode:ionian
-      ~degrees:Pentatonic.major ~notes_per_string:2 ~anchor:open_low_e
+      ~degrees:Scales.pentatonic_major ~notes_per_string:2 ~anchor:open_low_e
   in
   Alcotest.(check int)
     "five shapes, one per pentatonic degree" 5 (List.length shapes);
@@ -162,7 +162,7 @@ let pentatonic_degrees_drive_two_notes_per_string_shapes () =
 let arpeggio_degrees_drive_one_note_per_string_shapes () =
   let shapes =
     Shape.positions ~instrument ~key:c_major ~mode:ionian
-      ~degrees:Arpeggio.major ~notes_per_string:1 ~anchor:open_low_e
+      ~degrees:Scales.arpeggio_major ~notes_per_string:1 ~anchor:open_low_e
   in
   Alcotest.(check int)
     "three shapes, one per arpeggio degree" 3 (List.length shapes);

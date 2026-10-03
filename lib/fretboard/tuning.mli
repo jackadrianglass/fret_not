@@ -13,8 +13,6 @@ val semitone_at : t -> string_index:int -> fret:int -> int
 (** Sounding semitones above C0 of a position: the open string's semitone plus
     the fret. *)
 
-val pitch_class_at : t -> string_index:int -> fret:int -> Pitch_class.t
-
 val retune_string : t -> string_index:int -> semitones:int -> t
 (** Shift one string's open note by semitones, spelling the result with the
     smallest accidental available. Drop tunings derive from [standard]. *)

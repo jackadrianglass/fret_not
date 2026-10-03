@@ -10,6 +10,7 @@ let () =
     ; ("pentatonic", Pentatonic_test.tests)
     ; ("arpeggio", Arpeggio_test.tests)
     ; ("key", Key_test.tests)
+    ; ("degree_reference", Degree_reference_test.tests)
     ; ("tuning", Tuning_test.tests)
     ; ("instrument", Instrument_test.tests)
     ; ("reach", Reach_test.tests)

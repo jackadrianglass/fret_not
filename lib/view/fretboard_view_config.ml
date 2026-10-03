@@ -5,7 +5,6 @@ type t =
   ; canvas_height : int
   ; control_bar_height : int
   ; margin : float
-  ; fret_count : int
   ; instrument : Instrument.t
   ; position_dot_radius : float
   ; root_halo_radius : float
@@ -28,7 +27,6 @@ let default =
   ; canvas_height = 360
   ; control_bar_height = 50
   ; margin = 65.
-  ; fret_count = 12
   ; instrument =
       Instrument.create_uniform ~tuning:Tuning.standard ~fret_count:22
   ; position_dot_radius = 14.

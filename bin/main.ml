@@ -50,7 +50,7 @@ let () =
         in
         let fretboard_top_y =
           Tab_view.draw tab_config ~canvas_width:content_width
-            ~tuning:(Instrument.tuning fretboard_config.instrument)
+            ~instrument:fretboard_config.instrument
             ~top_y:(offset_y + fretboard_config.control_bar_height)
             ~offset_x ~notes
         in

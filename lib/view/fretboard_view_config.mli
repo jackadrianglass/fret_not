@@ -5,7 +5,6 @@ type t =
   ; canvas_height : int
   ; control_bar_height : int
   ; margin : float
-  ; fret_count : int
   ; instrument : Instrument.t
   ; position_dot_radius : float
   ; root_halo_radius : float

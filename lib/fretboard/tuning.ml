@@ -8,10 +8,6 @@ let open_note t ~string_index = List.nth_exn t string_index
 let open_semitone t ~string_index = Note.semitone (open_note t ~string_index)
 let semitone_at t ~string_index ~fret = open_semitone t ~string_index + fret
 
-let pitch_class_at t ~string_index ~fret =
-  Pitch_class.of_int (semitone_at t ~string_index ~fret)
-;;
-
 let spelled_pitch_of_pitch_class pitch_class =
   Letter.all
   |> List.filter_map ~f:(fun letter ->

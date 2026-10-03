@@ -6,7 +6,7 @@ let layout (config : Fretboard_view_config.t) : Fretboard_layout.t =
   ; canvas_height = Float.of_int config.canvas_height
   ; margin = config.margin
   ; string_count = Instrument.string_count config.instrument
-  ; fret_count = config.fret_count
+  ; fret_count = Instrument.max_fret config.instrument
   }
 ;;
 
@@ -181,7 +181,7 @@ let tonic_options =
 let quality_options = "Major;Minor"
 let label_mode_options = "Degrees;Notes"
 let showing_text = "showing"
-let scale_options = "Diatonic"
+let scale_options = "Diatonic;Pentatonic;Arpeggio"
 
 let draw_controls (config : Fretboard_view_config.t)
     (state : Fretboard_view_state.t) ~offset_x ~offset_y :
@@ -189,7 +189,7 @@ let draw_controls (config : Fretboard_view_config.t)
   let open Raylib in
   let control_bar_x = config.control_bar_x +. Float.of_int offset_x in
   let control_bar_y = config.control_bar_y +. Float.of_int offset_y in
-  let position_options = Fretboard_view_state.position_options state in
+  let position_options = Fretboard_view_state.position_options state ~config in
   let tonic_width = dropdown_width config tonic_options in
   let quality_width = dropdown_width config quality_options in
   let scale_width = dropdown_width config scale_options in

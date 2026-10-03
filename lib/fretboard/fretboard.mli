@@ -6,6 +6,11 @@ val root_note : key:Key.t -> Note.t
 
 val degree_note : key:Key.t -> mode:Mode.t -> Degree_reference.t -> Note.t
 
+val positions_of_semitone :
+  instrument:Instrument.t -> target_semitone:int -> Fretboard_position.t list
+(** Every playable position sounding exactly that semitone, one per string at
+    most, ascending by string. *)
+
 val degree_positions :
      instrument:Instrument.t
   -> key:Key.t

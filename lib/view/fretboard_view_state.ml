@@ -4,7 +4,10 @@ type label_mode =
   | Degree_number
   | Note_name
 
-type scale = Diatonic
+type scale =
+  | Diatonic
+  | Pentatonic
+  | Arpeggio
 
 type t =
   { tonic_index : int
@@ -54,7 +57,7 @@ let tonics =
 
 let quality_of_index = function 0 -> Key.Major | _ -> Key.Minor
 let label_mode_of_index = function 0 -> Degree_number | _ -> Note_name
-let scale_of_index _ = Diatonic
+let scale_of_index = function 0 -> Diatonic | 1 -> Pentatonic | _ -> Arpeggio
 let mode_of_quality = Key.mode_of_quality
 
 let key t =
@@ -64,32 +67,60 @@ let key t =
 ;;
 
 let mode t = mode_of_quality (quality_of_index t.quality_index)
-let scale_degrees t = Scale_degree.diatonic
+
+let scale_degrees t =
+  let quality = quality_of_index t.quality_index in
+  let preset ~major ~minor =
+    match quality with Key.Major -> major | Key.Minor -> minor
+  in
+  match scale_of_index t.scale_index with
+  | Diatonic -> Scale_degree.diatonic
+  | Pentatonic -> preset ~major:Pentatonic.major ~minor:Pentatonic.minor
+  | Arpeggio -> preset ~major:Arpeggio.major ~minor:Arpeggio.minor
+;;
+
+let notes_per_string t =
+  match scale_of_index t.scale_index with
+  | Diatonic -> 3
+  | Pentatonic -> 2
+  | Arpeggio -> 1
+;;
+
 let scale_mode t = mode t
 let scale_root t = Key.mode_root (key t) (scale_mode t)
 
 let highlighted_positions t ~(config : Fretboard_view_config.t) =
   let key = key t in
   let mode = mode t in
+  let degrees = scale_degrees t in
   Fretboard.degrees_in_window ~instrument:config.instrument ~key ~mode
-    ~min_fret:0 ~max_fret:config.fret_count
+    ~min_fret:0
+    ~max_fret:(Instrument.max_fret config.instrument)
+  |> List.filter ~f:(fun (_, dr) ->
+      List.mem degrees
+        (Degree_reference.scale_degree dr)
+        ~equal:Scale_degree.equal)
   |> List.map ~f:fst
 ;;
 
-let three_notes_per_string_positions t ~(config : Fretboard_view_config.t) =
+let position_shapes t ~(config : Fretboard_view_config.t) =
   Shape.positions ~instrument:config.instrument ~key:(key t) ~mode:(mode t)
-    ~degrees:Scale_degree.diatonic ~notes_per_string:3
+    ~degrees:(scale_degrees t) ~notes_per_string:(notes_per_string t)
     ~anchor:{ Fretboard_position.string_index = 0; fret = 0 }
 ;;
 
 let selected_position t ~config =
-  if t.position_index = 0 then None
-  else
-    let positions = three_notes_per_string_positions t ~config in
-    Some (List.nth_exn positions (t.position_index - 1))
+  let shapes = position_shapes t ~config in
+  if t.position_index > 0 && t.position_index <= List.length shapes then
+    Some (List.nth_exn shapes (t.position_index - 1))
+  else None
 ;;
 
-let position_options _t = "All;1;2;3;4;5;6;7"
+let position_options t ~config =
+  let shape_count = List.length (position_shapes t ~config) in
+  "All" :: List.init shape_count ~f:(fun i -> Int.to_string (i + 1))
+  |> String.concat ~sep:";"
+;;
 
 let position_label_text ~root ~mode ~label_mode (scale_degree : Scale_degree.t)
     =

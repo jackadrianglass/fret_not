@@ -47,13 +47,6 @@ let mode_root t mode =
   Spelled_pitch.of_pitch_class_exn ~letter ~pitch_class
 ;;
 
-let modes t =
-  List.map Mode.all ~f:(fun m ->
-      (m, Mode.pitch_classes m ~root:(Spelled_pitch.pitch_class (mode_root t m))))
-;;
-
-let mode_with_root t pitch_class =
-  List.find_map (modes t) ~f:(fun (m, pitch_classes) ->
-      if Pitch_class.equal (List.hd_exn pitch_classes) pitch_class then Some m
-      else None)
+let mode_pitch_classes t mode =
+  Mode.pitch_classes mode ~root:Spelled_pitch.(pitch_class (mode_root t mode))
 ;;

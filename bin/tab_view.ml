@@ -13,17 +13,17 @@ let layout (config : Tab_view_config.t) ~canvas_width ~string_count ~note_count
   }
 ;;
 
-let string_label tuning ~string_index =
-  Pitch_class.to_string (Tuning.pitch_class_at tuning ~string_index ~fret:0)
+let string_label instrument ~string_index =
+  Note.to_string (Tuning.open_note (Instrument.tuning instrument) ~string_index)
 ;;
 
 let draw_string_lines (config : Tab_view_config.t) (layout : Tab_layout.t)
-    ~canvas_width ~tuning ~top_y ~offset_x =
+    ~canvas_width ~instrument ~top_y ~offset_x =
   let open Raylib in
   for string_index = 0 to layout.string_count - 1 do
     let y = top_y + to_pixels (Tab_layout.string_y layout ~string_index) in
     draw_text
-      (string_label tuning ~string_index)
+      (string_label instrument ~string_index)
       (4 + offset_x)
       (y - (config.string_label_font_size / 2))
       config.string_label_font_size Color.darkgray;
@@ -62,12 +62,12 @@ let draw_rule (config : Tab_view_config.t) ~canvas_width ~y ~offset_x =
     Raylib.Color.black
 ;;
 
-let draw (config : Tab_view_config.t) ~canvas_width ~tuning ~top_y ~offset_x
+let draw (config : Tab_view_config.t) ~canvas_width ~instrument ~top_y ~offset_x
     ~(notes : Fretboard_position.t list option) =
-  let string_count = Tuning.string_count tuning in
+  let string_count = Instrument.string_count instrument in
   let note_count = Option.value_map notes ~default:2 ~f:List.length in
   let layout = layout config ~canvas_width ~string_count ~note_count in
-  draw_string_lines config layout ~canvas_width ~tuning ~top_y ~offset_x;
+  draw_string_lines config layout ~canvas_width ~instrument ~top_y ~offset_x;
   Option.iter notes ~f:(draw_notes config layout ~top_y ~offset_x);
   let rule_y =
     top_y

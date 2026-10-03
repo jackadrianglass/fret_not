@@ -54,10 +54,16 @@ lib/theory/        what the music is (no fretboard knowledge)
                    [0;2;4;5;7;9;11], pitch_classes() rotates the parent scale
   key.ml            {tonic: Spelled_pitch.t; Major|Minor}; mode_root() lifts
                    tonic to any mode via the parent-major trick and returns a
-                   *spelled* pitch; mode_of_quality() maps Major/Minor to
-                   Ionian/Aeolian
+                   *spelled* pitch; mode_pitch_classes() is the scale as pitch
+                   classes; mode_of_quality() maps Major/Minor to Ionian/Aeolian
   pentatonic.ml    degree-subset presets (major/minor pentatonic)
   arpeggio.ml      degree-subset presets (triads)
+  degree_reference.ml      {scale_degree; octave} — THE abstract note, and the
+                   chunk layer's domain type. Octave is TONIC-anchored: octave 0
+                   spans from the tonic up to the octave above, so degree 1
+                   octave 0 IS the tonic. interval() is THE resolution primitive
+                   (semitones above the tonic); note() builds an absolute SPN
+                   note on top of it.
 
 lib/fretboard/     the abstract↔concrete bridge
   fretboard_position.ml   {string_index; fret} — a concrete position
@@ -71,19 +77,19 @@ lib/fretboard/     the abstract↔concrete bridge
                    instrument; semitone_at resolves a position to sounding
                    pitch. This is where fret availability lives — not in view
                    config.
-  degree_reference.ml      {scale_degree; octave} — THE abstract note. Octave
-                   is TONIC-anchored: octave 0 spans [tonic, tonic+12), so
-                   degree 1 octave 0 IS the tonic. interval()/note() resolve
-                   to sounding semitones / spelled SPN notes anchored at a
-                   root note.
-  fretboard.ml     the slim bridge: degree_positions (degree → every playable
-                   position, instrument-clamped), degree_at (position → degree
-                   option, None off-key), degrees_in_window (every in-key
-                   playable position WITH its degree). root_note is the octave
-                   register all resolution here is anchored to.
+  fretboard.ml     the slim bridge: positions_of_semitone (the one position
+                   enumerator, shared with the solver), degree_positions
+                   (degree → positions, instrument-clamped), degree_at
+                   (position → degree option, None off-key),
+                   degrees_in_window (every in-key playable position WITH its
+                   degree). root_note is the octave register all resolution
+                   here is anchored to; degree_at round-trips through
+                   Degree_reference.interval.
   reach.ml         finger-stretch geometry: fret span, string span, and the
                    sounding interval span between two positions (tuning-aware —
-                   cross-string stretch depends on the tuning's intervals)
+                   cross-string stretch depends on the tuning's intervals).
+                   Only between() is wired so far (Chunk_solver's distance);
+                   ranking by semitone_span awaits the pick-and-practice flow.
   shape.ml         notes-per-string shapes over ANY degree list — the diatonic
                    degrees give the seven 3NPS positions, Pentatonic's the five
                    2NPS, Arpeggio's the three 1NPS inversions. Shapes drop to
@@ -101,7 +107,10 @@ lib/chunk/         the movable pattern layer (newest, most conceptually central)
                    resolve each note's absolute semitone (via
                    Fretboard.degree_note) FIRST, then choose only *which
                    string*. Skipping this broke every non-tonic chord (see
-                   chunk_solver_test.ml regression tests)
+                   chunk_solver_test.ml regression tests). The first note's
+                   octave window is derived from Instrument.range — no magic
+                   sweep constants — and candidate enumeration reuses
+                   Fretboard.positions_of_semitone.
 
 lib/layout/        pure geometry, no raylib, fully unit-tested
   fretboard_layout.ml      string/fret x,y math for the fretboard view
@@ -112,15 +121,19 @@ lib/layout/        pure geometry, no raylib, fully unit-tested
 lib/view/          renderable state/config (no raylib calls; testable)
   fretboard_view_config.ml  all presentation constants (window size, fonts,
                             radii, spacing) plus the Instrument (tuning +
-                            frets per string); fret_count is the drawn window
+                            frets per string). The Instrument is the only
+                            source of fret truth: the drawn window is
+                            Instrument.max_fret.
   tab_view_config.ml        tab presentation constants
   fretboard_view_state.ml   the UI state: dropdown indices (tonic, quality,
-                            scale, position, label mode). Derives Key/Mode/
-                            highlighted positions (Fretboard.degrees_in_window)
-                            and the selected 3NPS shape (Shape.positions) from
-                            indices. Tonic dropdown indexes the tonics list
-                            (spelled, 12 entries). Scale is Diatonic-only for
-                            now; changes of scale reset position_index
+                            scale, position, label mode). The scale dropdown
+                            picks a DEGREE LIST (Diatonic/Pentatonic/Arpeggio
+                            via the theory presets) which drives highlighting
+                            and Shape.positions (3/2/1 notes per string).
+                            Tonic dropdown indexes the tonics list (spelled,
+                            12 entries); position_options is derived from the
+                            actual shape list so it never advertises a shape
+                            the instrument can't play
 
 bin/               raylib/raygui rendering + the frame loop
   main.ml          frame loop: compute layout per frame (resize!), tab view on
@@ -129,8 +142,9 @@ bin/               raylib/raygui rendering + the frame loop
   fretboard_view.ml  draws grid, position dots (in-key filled / off-key hollow,
                      root halo, dimming when a position filter is active), and
                      the dropdown control bar via raygui
-  tab_view.ml      draws tab strings + fret numbers; selected_position notes
-                   render as tab; returns the y where the fretboard starts
+  tab_view.ml      draws tab strings (labeled with absolute SPN open notes:
+                     E2 vs E4) + fret numbers; selected_position notes render
+                     as tab; returns the y where the fretboard starts
 ```
 
 ## Data flow (one frame)

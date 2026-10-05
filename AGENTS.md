@@ -1,37 +1,66 @@
 # Codebase map
 
-Orientation for agents (and humans) working in this repo: where things live,
-how they connect, and the conventions to follow. The project's purpose is
-in `readme.md`; this file is the code-level counterpart.
+This document outlines how to navigate the code base
 
-## The one-paragraph mental model
+Note that the following files aren't targetting you and are for the users only. Reading
+them will likely misdirect you and cause confusion for everyone.
+- `readme.md` meant to give context for other contributors that isn't relevant to the development
+  of the project
+- `backlog.md` meant as a scratch pad for the humans sorting out their ideas
 
-Three layers, one direction of flow: **absolute notes** (`lib/absolute`) define
-what a sounding note *is* (SPN: C4, E2, Bb3). **Relative music**
-(`lib/relative`) defines what a scale degree, key, and chunk *are* — a chunk
-is a movable sequence of degree-relative notes — and resolves degrees against
-a key into absolute notes. The **fretboard layer** (`lib/fretboard`) maps
-those onto concrete string/fret positions for a given instrument, including
-finding every playable fingering of a chunk. The `bin/` + `lib/view` +
-`lib/layout` layer renders it all with raylib/raygui. Dependencies only point
-downward: `relative` may use `absolute`, `fretboard` may use both, and
-nothing below ever imports upward. (This layering is a convention — the
+Again, do not read these files (unless explicitely directed by the user). They will never be helpful
+and you should ask the user instead for direction.
+
+## Condensed mental model
+
+The primary boundaries are
+- Absolute notes layer (`lib/absolute`) define what a sounding note is (SPN: C4, E2, Bb3)
+- Relative music layer (`lib/relative`) defines what a scale degree, key, and chunk are
+    — a chunk is a movable sequence of degree-relative notes, and resolves degrees
+      against a key into absolute notes.
+- Fretboard layer (`lib/fretboard`) maps those onto concrete string/fret positions
+  for a given instrument, including finding every playable fingering of a chunk.
+- The UI layer `bin/` + `lib/view` + `lib/layout` layer renders it all with raylib/raygui
+
+Dependencies only point downward: `relative` may use `absolute`, `fretboard` may use both,
+and nothing below ever imports upward. (This layering is a convention — the
 project is one flat dune library — but treat a violation as a design bug.)
+
+## Toolchain
+
+The tools available are
+- ocaml 5.4.1; Primary development language
+- dune 3.23; OCaml build system
+- nushell 0.115.1; Shell for scripting
+
+## Libraries
+
+Libraries are managed by dune (ignore all Opam files). Primary libraries are
+- base 0.17.3; Jane Street's standard library. Don't use the built-in standard library
+- raylib 2.2.2; OCaml bindings to the C raylib multimedia library
+- raygui 2.2.2; OCaml bindings to the C raylib immediate-mode gui library
+- ppx_deriving 6.2.0; PPX preprocessing to deal with boiler plate
+- alcotest 1.9.1; Unit testing library
+
+Whenever you encounter things that you wish you knew when you started the task,
+add/update the reference document in `notes/` for that library. Don't complain
+about how you arrived at the conclusions. Just write yourself notes to be kind
+to your future self.
 
 ## Commands
 
+Assume that you are operating in the devenv shell and that all the tools are
+available to you.
+
 ```sh
-devenv shell                     # enter the toolchain (OCaml 5.4.1, dune)
+dune pkg lock                    # Generate dune lock files. Use when updating dependencies
 dune build                       # build
-dune exec bin/main.exe            # run the app (borderless fullscreen)
 dune test                        # alcotest suite (test/test_fret_not.ml wires it)
 dune build @fmt --auto-promote   # ocamlformat
 ```
 
-Build system: dune 3.23, `fret_not.opam` generated from `dune-project`
-(edit `dune-project`, not the opam file). Deps are deliberately tiny:
-`base`, `raylib`, `raygui`, `ppx_deriving`, `alcotest` (test only),
-`ocamlformat`.
+Ask the human to run the application and give feedback whenever you have something
+working. Keep them actively involved in the process.
 
 ## Module map
 
@@ -203,14 +232,17 @@ House style:
 
 ## Toolchain & environment notes
 
-(The `contributing/` reference docs were removed; these are the facts from
-them that aren't recoverable from the code itself.)
+(GUI-specific raylib/raygui findings — style propagation quirks, widget
+sizing formulas, binding traps — live in `docs/raylib-raygui-notes.md`
+instead of here; update that file when you learn something new.)
 
 - **Base, not Stdlib.** `base` v0.17 is the stdlib here: labeled function
   args (`List.map ~f:...`), no polymorphic compare/equal (each type exports
   its own), `open! Base` per
   file. Most OCaml snippets online assume `Stdlib` — check the Base API docs
-  before trusting them.
+  before trusting them. The comparison operators (`<`, `>`, `=`, ...) are
+  int-typed under `open! Base` — scope float comparisons through the module:
+  `Float.(y < 0.)`, never a bare `<` on floats.
 - **Derive `equal`/`compare`; don't hand-write structural ones.** Types carry
   `[@@deriving eq]`/`[@@deriving ord]` (from `ppx_deriving`, wired as
   `(preprocess ...)` in `lib/dune`) in BOTH the .ml and the .mli — the mli

@@ -18,6 +18,7 @@ let () =
     ; ("fretboard_layout", Fretboard_layout_test.tests)
     ; ("tab_layout", Tab_layout_test.tests)
     ; ("row_layout", Row_layout_test.tests)
+    ; ("page_layout", Page_layout_test.tests)
     ; ("chunk_layout", Chunk_layout_test.tests)
     ; ("fretboard_view_state", Fretboard_view_state_test.tests)
     ; ("chunk_view_state", Chunk_view_state_test.tests)

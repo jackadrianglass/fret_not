@@ -22,6 +22,9 @@ binding's type signatures alone. Update it when you learn something new.
 
 - `raylib-ocaml-docs.txt` (repo root) is the generated binding API doc:
   signatures, module layout (`Raylib`, `Raygui`, submodules).
+- `raylib-raygui-ui-examples.md` (next to this file) is the examples
+  cookbook: working widget/camera/scissor/render-texture patterns,
+  compile-checked against these bindings.
 
 ## Binding API shapes (the ones that matter)
 

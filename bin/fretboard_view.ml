@@ -106,22 +106,18 @@ let draw_centered_text (config : Fretboard_view_config.t) text ~center_x
 ;;
 
 let draw_in_key_dot (config : Fretboard_view_config.t) ~root ~mode ~label_mode
-    ~dim (scale_degree : Scale_degree.t) ~center_x ~center_y =
-  let shade color =
-    if dim then Raylib.fade color config.dimmed_alpha else color
-  in
+    (scale_degree : Scale_degree.t) ~center_x ~center_y =
   Raylib.draw_circle center_x center_y config.position_dot_radius
-    (shade (ui_accent_fill ()));
+    (ui_accent_fill ());
   Raylib.draw_circle_lines center_x center_y config.position_dot_radius
-    (shade (ui_accent_border ()));
+    (ui_accent_border ());
   if scale_degree.degree = 1 then
     Raylib.draw_circle_lines center_x center_y config.root_halo_radius
-      (shade Raylib.Color.black);
+      Raylib.Color.black;
   draw_centered_text config
     (Fretboard_view_state.position_label_text ~root ~mode ~label_mode
        scale_degree)
-    ~center_x ~center_y
-    ~color:(shade (ui_accent_text ()))
+    ~center_x ~center_y ~color:(ui_accent_text ())
 ;;
 
 let draw_off_key_dot (config : Fretboard_view_config.t) ~center_x ~center_y =
@@ -133,12 +129,9 @@ let draw_fret_positions (config : Fretboard_view_config.t)
     (state : Fretboard_view_state.t) ~top_y ~offset_x =
   let layout = layout config in
   let in_key = Fretboard_view_state.highlighted_positions state ~config in
-  let selected_position =
-    Fretboard_view_state.selected_position state ~config
-  in
-  let scale_degrees = Fretboard_view_state.scale_degrees state in
-  let scale_root = Fretboard_view_state.scale_root state in
-  let scale_mode = Fretboard_view_state.scale_mode state in
+  let key = Fretboard_view_state.key state in
+  let mode = Fretboard_view_state.mode state in
+  let root = Key.mode_root key mode in
   let label_mode =
     Fretboard_view_state.label_mode_of_index state.label_mode_index
   in
@@ -153,21 +146,15 @@ let draw_fret_positions (config : Fretboard_view_config.t)
           Instrument.pitch_class_at config.instrument position
         in
         let scale_degree =
-          List.find_exn scale_degrees ~f:(fun (d : Scale_degree.t) ->
+          List.find_exn Scale_degree.diatonic ~f:(fun (d : Scale_degree.t) ->
               Pitch_class.equal
                 (Scale_degree.pitch_class
-                   ~root:Spelled_pitch.(pitch_class scale_root)
-                   ~mode:scale_mode d)
+                   ~root:Spelled_pitch.(pitch_class root)
+                   ~mode d)
                 pitch_class)
         in
-        let dim =
-          match selected_position with
-          | None -> false
-          | Some positions ->
-              not (List.mem positions position ~equal:Fretboard_position.equal)
-        in
-        draw_in_key_dot config ~root:scale_root ~mode:scale_mode ~label_mode
-          ~dim scale_degree ~center_x ~center_y
+        draw_in_key_dot config ~root ~mode ~label_mode scale_degree ~center_x
+          ~center_y
       else draw_off_key_dot config ~center_x ~center_y
     done
   done
@@ -181,37 +168,68 @@ let tonic_options =
 let quality_options = "Major;Minor"
 let label_mode_options = "Degrees;Notes"
 let showing_text = "showing"
-let scale_options = "Diatonic;Pentatonic;Arpeggio"
+let page_options = "Edit;View"
+
+(* DEFAULT's Text_padding — 6px here, installed for the dropdowns —
+   propagates to toggles and shifts their text right without shrinking the
+   box, so a toggle entry's width has to budget that padding. *)
+let toggle_entry_width text =
+  Float.of_int
+    (text_width text + Raygui.get_style (Raygui.Control.Default `Text_padding))
+;;
+
+(* DEFAULT's BACKGROUND_COLOR is the same raywhite the page clears to, so a
+   bar fill in it would be invisible — the bar reads through a light tint of
+   the theme's LINE_COLOR plus a full-alpha rule along its bottom edge. *)
+let draw_control_bar (config : Fretboard_view_config.t) ~offset_x ~offset_y =
+  let open Raylib in
+  let line = ui_style_color `Line_color in
+  draw_rectangle_rec
+    (Rectangle.create (Float.of_int offset_x) (Float.of_int offset_y)
+       (Float.of_int config.canvas_width)
+       (Float.of_int config.control_bar_height))
+    (fade line config.control_bar_tint_alpha);
+  draw_rectangle offset_x
+    (offset_y + config.control_bar_height - 1)
+    config.canvas_width 1 line
+;;
 
 let draw_controls (config : Fretboard_view_config.t)
     (state : Fretboard_view_state.t) ~offset_x ~offset_y :
     Fretboard_view_state.t =
   let open Raylib in
-  let control_bar_x = config.control_bar_x +. Float.of_int offset_x in
+  draw_control_bar config ~offset_x ~offset_y;
+  let nav_x = config.control_bar_x +. Float.of_int offset_x in
+  let controls_end_x =
+    Float.of_int (offset_x + config.canvas_width) -. config.control_bar_x
+  in
   let control_bar_y = config.control_bar_y +. Float.of_int offset_y in
-  let position_options = Fretboard_view_state.position_options state ~config in
+  let page_entries = String.split page_options ~on:';' in
+  let page_entry_width =
+    List.map page_entries ~f:toggle_entry_width
+    |> List.max_elt ~compare:Float.compare
+    |> Option.value ~default:0.
+  in
   let tonic_width = dropdown_width config tonic_options in
   let quality_width = dropdown_width config quality_options in
-  let scale_width = dropdown_width config scale_options in
-  let position_width = dropdown_width config position_options in
   let showing_width = label_width showing_text in
   let label_mode_width = dropdown_width config label_mode_options in
-  let xs =
-    Row_layout.x_positions ~start_x:control_bar_x ~gap:config.control_gap
-      [ tonic_width
-      ; quality_width
-      ; scale_width
-      ; position_width
-      ; showing_width
-      ; label_mode_width
-      ]
+  let right_xs =
+    Row_layout.x_positions_from_right ~end_x:controls_end_x
+      ~gap:config.control_gap
+      [ tonic_width; quality_width; showing_width; label_mode_width ]
   in
-  let tonic_x = List.nth_exn xs 0
-  and quality_x = List.nth_exn xs 1
-  and scale_x = List.nth_exn xs 2
-  and position_x = List.nth_exn xs 3
-  and showing_x = List.nth_exn xs 4
-  and label_mode_x = List.nth_exn xs 5 in
+  let page_x = nav_x in
+  let tonic_x = List.nth_exn right_xs 0
+  and quality_x = List.nth_exn right_xs 1
+  and showing_x = List.nth_exn right_xs 2
+  and label_mode_x = List.nth_exn right_xs 3 in
+  let page_index =
+    Raygui.toggle_group
+      (Rectangle.create page_x control_bar_y page_entry_width
+         config.control_height)
+      page_options state.page_index
+  in
   let quality_index, quality_toggled =
     Raygui.dropdown_box
       (Rectangle.create quality_x control_bar_y quality_width
@@ -221,31 +239,6 @@ let draw_controls (config : Fretboard_view_config.t)
   let quality_dropdown_open =
     if quality_toggled then not state.quality_dropdown_open
     else state.quality_dropdown_open
-  in
-  let scale_index, scale_toggled =
-    Raygui.dropdown_box
-      (Rectangle.create scale_x control_bar_y scale_width config.control_height)
-      scale_options state.scale_index state.scale_dropdown_open
-  in
-  let scale_dropdown_open =
-    if scale_toggled then not state.scale_dropdown_open
-    else state.scale_dropdown_open
-  in
-  let position_index, position_toggled =
-    Raygui.dropdown_box
-      (Rectangle.create position_x control_bar_y position_width
-         config.control_height)
-      position_options state.position_index state.position_dropdown_open
-  in
-  let position_dropdown_open =
-    if position_toggled then not state.position_dropdown_open
-    else state.position_dropdown_open
-  in
-  let position_index =
-    (* Diatonic and Pentatonic have different-length position lists, so a
-       stale index carried across a scale switch could point at the wrong
-       position or fall outside the new list. *)
-    if scale_index <> state.scale_index then 0 else position_index
   in
   Raygui.label
     (Rectangle.create showing_x control_bar_y showing_width
@@ -270,15 +263,12 @@ let draw_controls (config : Fretboard_view_config.t)
     if tonic_toggled then not state.tonic_dropdown_open
     else state.tonic_dropdown_open
   in
-  { Fretboard_view_state.tonic_index
+  { Fretboard_view_state.page_index
+  ; tonic_index
   ; quality_index
   ; tonic_dropdown_open
   ; quality_dropdown_open
   ; label_mode_index
   ; label_mode_dropdown_open
-  ; scale_index
-  ; scale_dropdown_open
-  ; position_index
-  ; position_dropdown_open
   }
 ;;

@@ -11,7 +11,6 @@ type t =
   ; label_font_size : int
   ; fret_number_font_size : int
   ; fret_number_gap_below_lowest_string : int
-  ; dimmed_alpha : float
   ; dropdown_left_text_padding : int
   ; control_bar_x : float
   ; control_bar_y : float
@@ -20,6 +19,8 @@ type t =
   ; dropdown_text_to_arrow_gap : int
   ; window_title : string
   ; target_fps : int
+  ; window_min_width : int
+  ; control_bar_tint_alpha : float
   }
 
 let default =
@@ -34,7 +35,6 @@ let default =
   ; label_font_size = 14
   ; fret_number_font_size = 18
   ; fret_number_gap_below_lowest_string = 8
-  ; dimmed_alpha = 0.3
   ; dropdown_left_text_padding = 6
   ; control_bar_x = 10.
   ; control_bar_y = 15.
@@ -43,5 +43,7 @@ let default =
   ; dropdown_text_to_arrow_gap = 12
   ; window_title = "fret_not"
   ; target_fps = 60
+  ; window_min_width = 900
+  ; control_bar_tint_alpha = 0.2
   }
 ;;

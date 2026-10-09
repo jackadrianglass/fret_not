@@ -13,6 +13,18 @@ let x_positions_respects_a_nonzero_start_x () =
     (Row_layout.x_positions ~start_x:10. ~gap:5. [ 10.; 10. ])
 ;;
 
+let x_positions_from_right_ends_flush_at_end_x () =
+  Alcotest.(check (list (float 0.001)))
+    "last width ends at end_x, order preserved" [ 80.; 140.; 180. ]
+    (Row_layout.x_positions_from_right ~end_x:200. ~gap:10. [ 50.; 30.; 20. ])
+;;
+
+let x_positions_from_right_respects_a_single_width () =
+  Alcotest.(check (list (float 0.001)))
+    "one width lands exactly at end_x" [ 175. ]
+    (Row_layout.x_positions_from_right ~end_x:200. ~gap:10. [ 25. ])
+;;
+
 let dropdown_width_adds_padding_arrow_and_gap () =
   Alcotest.(check (float 0.001))
     "left_padding + widest + arrow_padding + gap"
@@ -26,6 +38,10 @@ let tests =
       x_positions_lays_out_left_to_right_with_gaps
   ; Alcotest.test_case "x_positions respects a nonzero start_x" `Quick
       x_positions_respects_a_nonzero_start_x
+  ; Alcotest.test_case "x_positions_from_right ends flush at end_x" `Quick
+      x_positions_from_right_ends_flush_at_end_x
+  ; Alcotest.test_case "x_positions_from_right respects a single width" `Quick
+      x_positions_from_right_respects_a_single_width
   ; Alcotest.test_case "dropdown_width adds padding, arrow, and gap" `Quick
       dropdown_width_adds_padding_arrow_and_gap
   ]

@@ -1,7 +1,0 @@
-(include_subdirs unqualified)
-
-(library
- (name fret_not)
- (libraries base)
- (preprocess
-  (pps ppx_deriving.eq ppx_deriving.ord)))

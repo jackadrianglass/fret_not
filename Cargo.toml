@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/absolute",
+    "crates/relative",
+    "crates/fretboard",
+]
+
+[workspace.dependencies]
+absolute = { path = "crates/absolute" }
+relative = { path = "crates/relative" }
+
+[workspace.package]
+edition = "2024"

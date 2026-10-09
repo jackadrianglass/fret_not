@@ -76,10 +76,9 @@ ideas are being tried out and experimented with.
 # Technologies being used
 
 For the moment, I'm using
-1. OCaml with the Jane Street Base library
-2. Raylib for the multimedia library and gui
-3. Devenv & nix for toolchain management
-4. nushell for any shell scripting
+1. Rust
+2. Devenv & nix for toolchain management
+3. nushell for any shell scripting
 
 Note that this project is entirely vibe coded. Part of the goal here is for me to explore that
 style of development, to learn a language for work, and to make something that I'd actually use
@@ -94,11 +93,11 @@ Some qualities that I'm looking for are
 Install [devenv](https://devenv.sh/getting-started/) then you can run
 ```nu
 devenv shell                    # devenv will install and add all the necessary tools here
-dune build                      # builds all the project's targets
-dune test                       # runs the tests
-dune exec bin/main.exe          # runs the application
-dune build @fmt --auto-promote  # formats the code
+cargo build                     # builds all the project's targets
+cargo test                      # runs the tests
+cargo run                       # runs the application
+cargo fmt                       # formats the code
 ```
 
-devenv will also install the ocamllsp for your editor. You can simply launch it from the devenv shell
+devenv will also install the rust-analyzer for your editor. You can simply launch it from the devenv shell
 to get access to it.

@@ -1,0 +1,43 @@
+(version 1)
+
+(build
+ (all_platforms ((action (run pkg-config SDL2_ttf)))))
+
+(depends
+ (all_platforms (conf-pkg-config)))
+
+(depexts
+ ((sdl2_ttf-dev)
+  (= %{os_family} alpine))
+ ((libsdl2-ttf-dev)
+  (= %{os_family} debian))
+ ((libsdl2-ttf-dev)
+  (= %{os_family} ubuntu))
+ ((libsdl2_ttf-devel)
+  (= %{os_family} mageia))
+ ((SDL2_ttf-devel)
+  (or_absorb_undefined_var
+   (= %{os_family} suse)
+   (= %{os_family} opensuse)))
+ ((SDL2_ttf-devel)
+  (= %{os_family} fedora))
+ ((SDL2_ttf-devel epel-release)
+  (= %{os_distribution} centos))
+ ((sdl2_ttf)
+  (= %{os_family} arch))
+ ((sdl2-ttf)
+  (= %{os_family} gentoo))
+ ((sdl2_ttf)
+  (and_absorb_undefined_var
+   (= %{os_distribution} homebrew)
+   (= %{os} macos)))
+ ((sdl2_ttf)
+  (= %{os} freebsd))
+ ((sdl2-ttf)
+  (= %{os} openbsd))
+ ((SDL2_ttf)
+  (= %{os} netbsd))
+ ((SDL2_ttf)
+  (= %{os} nixos))
+ ((libSDL2_ttf-devel)
+  (= %{os} cygwin)))

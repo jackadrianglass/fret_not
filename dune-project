@@ -15,6 +15,7 @@
    base
    raylib
    raygui
+   bogue
    ppx_deriving
    (alcotest :with-test)
    ocamlformat

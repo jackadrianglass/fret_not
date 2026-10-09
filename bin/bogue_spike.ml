@@ -41,7 +41,6 @@ let color name = Draw.opaque (Draw.find_color name)
 (* Bogue draws widget text but not canvas text; SDL_ttf is usable from
    inside the render queue, which runs after SDL init *)
 let font_ref : Ttf.font option ref = ref None
-
 let log msg = Stdlib.prerr_endline ("spike: " ^ msg)
 
 let font () =

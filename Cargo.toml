@@ -1,14 +1,25 @@
 [workspace]
 resolver = "2"
+# spike-gpui is excluded and keeps its own Cargo.lock: pulled into the
+# shared resolution, its tree (blade-graphics -> naga with wgsl) trips a
+# naga/codespan-reporting incompatibility that the standalone resolution
+# avoids. Build it with `cargo build --manifest-path
+# crates/spikes/gpui/Cargo.toml`.
 members = [
     "crates/absolute",
     "crates/relative",
     "crates/fretboard",
+    "crates/spikes/iced",
+    "crates/spikes/slint",
+    "crates/spikes/xilem",
+    "crates/spikes/ply",
 ]
+exclude = ["crates/spikes/gpui"]
 
 [workspace.dependencies]
 absolute = { path = "crates/absolute" }
 relative = { path = "crates/relative" }
+fretboard = { path = "crates/fretboard" }
 
 [workspace.package]
 edition = "2024"

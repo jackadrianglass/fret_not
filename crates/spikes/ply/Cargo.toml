@@ -1,0 +1,10 @@
+[package]
+name = "spike-ply"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+absolute.workspace = true
+relative.workspace = true
+fretboard.workspace = true
+ply-engine = "1.1.1"

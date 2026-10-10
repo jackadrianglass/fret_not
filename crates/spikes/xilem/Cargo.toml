@@ -1,0 +1,10 @@
+[package]
+name = "spike-xilem"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+absolute.workspace = true
+relative.workspace = true
+fretboard.workspace = true
+xilem = { git = "https://github.com/linebender/xilem" }

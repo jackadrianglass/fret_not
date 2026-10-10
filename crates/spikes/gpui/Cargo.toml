@@ -1,0 +1,12 @@
+[package]
+name = "spike-gpui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+absolute = { path = "../../absolute" }
+relative = { path = "../../relative" }
+fretboard = { path = "../../fretboard" }
+# runtime_shaders skips the build-time Metal shader compilation (no
+# Xcode needed); shaders compile in-process at app start instead.
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }

@@ -1,0 +1,394 @@
+import { Button, CheckBox, ComboBox } from "std-widgets.slint";
+
+export struct DotInfo {
+    string-index: int,
+    fret: int,
+    in-key: bool,
+    is-root: bool,
+    is-selected: bool,
+    label: string,
+}
+
+export struct SlotInfo {
+    index: int,
+    label: string,
+    is-rest: bool,
+    is-selected: bool,
+}
+
+export struct SlotPosition {
+    string-index: int,
+    fret: int,
+}
+
+component Fretboard inherits Rectangle {
+    in property <[DotInfo]> dots;
+    in property <[int]> string-indices;
+    in property <[int]> fret-numbers;
+    in property <[string]> fret-labels;
+    in property <[int]> inlay-frets;
+    in property <[int]> inlay-double-frets;
+    in property <int> string-count;
+    in property <int> max-fret;
+    in property <int> tick;
+    in property <int> bloom-start;
+    in property <bool> sweep;
+    in property <int> current-slot;
+    in property <float> slot-frac;
+    in property <[SlotPosition]> slot-positions;
+    in property <int> slot-count;
+    callback dot-clicked(int, int);
+
+    property <length> pad-x: 24px;
+    property <length> pad-top: 20px;
+    property <length> pad-bottom: 30px;
+    property <length> fw: (self.width - 2 * self.pad-x) / (self.max-fret + 1);
+    property <length> sg: (self.height - self.pad-top - self.pad-bottom) / (self.string-count - 1);
+    property <length> dot-r: min(max(self.fw * 0.16, 6px), 16px);
+    property <length> board-top: self.pad-top;
+    property <length> board-height: self.sg * (self.string-count - 1);
+
+    property <SlotPosition> pulse-pos:
+        self.current-slot >= 0 && self.current-slot < self.slot-positions.length
+        ? self.slot-positions[self.current-slot]
+        : { string-index: -1, fret: -1 };
+    property <float> pulse-factor:
+        self.current-slot < 0 ? 1.0 : 1.0 + 0.3 * (1.0 - self.slot-frac) * (1.0 - self.slot-frac);
+
+    for s in self.string-indices: Rectangle {
+        y: root.pad-top + s * root.sg - 1px;
+        x: root.pad-x;
+        width: root.fw * root.max-fret;
+        height: (s == 0 || s == root.string-count - 1) ? 3px : 2px;
+        background: #9999a0;
+    }
+
+    Rectangle {
+        x: root.pad-x - 3px;
+        width: 6px;
+        y: root.board-top;
+        height: root.board-height;
+        background: #ccccd4;
+    }
+
+    for f[i] in self.fret-numbers: Rectangle {
+        x: root.pad-x + f * root.fw - 0.5px;
+        width: 1px;
+        y: root.board-top;
+        height: root.board-height;
+        background: #50505a;
+
+        Text {
+            text: root.fret-labels[i];
+            x: root.pad-x + f * root.fw + root.fw / 2 - root.pad-x + f * root.fw - 4px;
+            y: root.board-top + root.board-height + 6px;
+            color: #888890;
+            font-size: 12px;
+        }
+    }
+
+    for f in self.inlay-frets: Rectangle {
+        x: root.pad-x + f * root.fw + root.fw / 2 - 4px;
+        width: 8px;
+        y: root.board-top + root.board-height / 2 - 4px;
+        height: 8px;
+        border-radius: 4px;
+        background: #44444e;
+    }
+
+    for f in self.inlay-double-frets: Rectangle {
+        x: root.pad-x + f * root.fw + root.fw / 2 - 4px;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        y: root.board-top + root.sg * 1.5 - 4px;
+        background: #44444e;
+    }
+    for f in self.inlay-double-frets: Rectangle {
+        x: root.pad-x + f * root.fw + root.fw / 2 - 4px;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        y: root.board-top + root.sg * 3.5 - 4px;
+        background: #44444e;
+    }
+
+    for d in self.dots: cell := Rectangle {
+        property <float> bloom:
+            min(1.0, max(0.0, (root.tick - root.bloom-start - d.fret * 18) / 250.0));
+        property <bool> is-pulse:
+            d.string-index == root.pulse-pos.string-index && d.fret == root.pulse-pos.fret;
+        property <float> wave: !root.sweep ? 1.0
+            : (0.4 + 0.6 * (0.5 + 0.5 * Math.sin(360deg * root.tick / 1200 - d.fret * 15deg)));
+
+        opacity: self.bloom;
+        width: root.dot-r * (0.25 + 0.75 * self.bloom) * (self.is-pulse ? root.pulse-factor : 1.0);
+        height: self.width;
+        x: root.pad-x + d.fret * root.fw + root.fw / 2 - self.width / 2;
+        y: root.pad-top + d.string-index * root.sg - self.height / 2;
+
+        halo := Rectangle {
+            width: parent.width * (touch.has-hover ? 1.35 : 1.0);
+            height: self.width;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: self.width / 2;
+            opacity: parent.bloom;
+            animate width { duration: 120ms; easing: ease-out; }
+
+            border-width: d.in-key ? 0px : 1.2px;
+            border-color: #666670;
+
+            if d.is-root: Rectangle {
+                width: halo.width + 5px;
+                height: self.width;
+                x: (halo.width - self.width) / 2;
+                y: (halo.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #000000;
+            }
+
+            if d.in-key: Rectangle {
+                width: halo.width;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: #ff8a3d;
+
+                Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    border-radius: self.width / 2;
+                    background: #16161c;
+                    opacity: 1.0 - cell.wave;
+                }
+
+                if d.is-selected: Rectangle {
+                    width: parent.width + 8px;
+                    height: self.width;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: self.width / 2;
+                    border-width: 1.5px;
+                    border-color: #ffffffdd;
+                }
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: d.label;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    color: #ffffff;
+                    font-size: min(17px, root.dot-r * 1.1);
+                }
+            }
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.dot-clicked(d.string-index, d.fret);
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "fret_not — slint spike";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    background: #16161c;
+
+    in-out property <[string]> tonic-names;
+    in-out property <int> tonic-index;
+    in-out property <[string]> quality-names;
+    in-out property <int> quality-index;
+    in-out property <bool> notes-mode;
+    in-out property <bool> sweep;
+    in-out property <[DotInfo]> dots;
+    in-out property <[SlotInfo]> slots;
+    in-out property <[SlotPosition]> slot-positions;
+    in-out property <int> slot-count;
+    in-out property <[string]> tab-lines;
+    in-out property <int> fingering-count;
+    in-out property <int> fingering-index;
+    in-out property <string> fingering-label;
+    in-out property <string> chord-label;
+    in-out property <bool> playing;
+    in-out property <int> tick;
+    in-out property <int> bloom-start;
+    in-out property <int> play-start;
+    in-out property <int> string-count;
+    in-out property <int> max-fret;
+    in-out property <[int]> string-indices;
+    in-out property <[int]> fret-numbers;
+    in-out property <[string]> fret-labels;
+    in-out property <[int]> inlay-frets;
+    in-out property <[int]> inlay-double-frets;
+
+    callback tonic-selected(int);
+    callback quality-selected(int);
+    callback dot-clicked(int, int);
+    callback slot-clicked(int);
+    callback add-slot();
+    callback remove-slot();
+    callback fingering-prev();
+    callback fingering-next();
+    callback chord-prev();
+    callback chord-next();
+    callback play-toggled();
+
+    property <int> elapsed: self.playing ? max(0, self.tick - self.play-start) : 0;
+    property <int> current-slot:
+        !self.playing || self.slot-count == 0 ? -1 : mod(self.elapsed / 500, self.slot-count);
+    property <float> slot-frac: mod(self.elapsed, 500) / 500.0;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        Rectangle {
+            height: 52px;
+            background: #1c1c26;
+            HorizontalLayout {
+                padding: 8px;
+                spacing: 12px;
+                Text {
+                    text: "fret_not — slint spike";
+                    color: #ff8a3d;
+                    vertical-alignment: center;
+                }
+                ComboBox {
+                    width: 110px;
+                    model: root.tonic-names;
+                    current-index: root.tonic-index;
+                    selected => {
+                        root.tonic-selected(self.current-index);
+                    }
+                }
+                ComboBox {
+                    width: 110px;
+                    model: root.quality-names;
+                    current-index: root.quality-index;
+                    selected => {
+                        root.quality-selected(self.current-index);
+                    }
+                }
+                CheckBox {
+                    text: "note names";
+                    checked <=> root.notes-mode;
+                }
+                CheckBox {
+                    text: "sweep";
+                    checked <=> root.sweep;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 44px;
+            HorizontalLayout {
+                spacing: 4px;
+                for slot in root.slots: Rectangle {
+                    width: 46px;
+                    border-radius: 4px;
+                    background: slot.is-rest ? #22222c : #2a2a36;
+                    border-width: slot.is-selected ? 2px : 0px;
+                    border-color: #ff8a3d;
+                    TouchArea {
+                        clicked => {
+                            root.slot-clicked(slot.index);
+                        }
+                    }
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: slot.label;
+                        font-family: "Menlo";
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        color: root.current-slot == slot.index ? #ff8a3d
+                            : slot.is-rest ? #888888 : #ffffff;
+                    }
+                }
+                Button {
+                    text: "+";
+                    clicked => { root.add-slot(); }
+                }
+                Button {
+                    text: "-";
+                    clicked => { root.remove-slot(); }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 44px;
+            HorizontalLayout {
+                spacing: 8px;
+                Button {
+                    text: "prev";
+                    clicked => { root.fingering-prev(); }
+                }
+                Button {
+                    text: "next";
+                    clicked => { root.fingering-next(); }
+                }
+                Text {
+                    text: root.fingering-label;
+                    vertical-alignment: center;
+                    color: #cccccc;
+                }
+                Button {
+                    text: "< chord";
+                    clicked => { root.chord-prev(); }
+                }
+                Text {
+                    text: root.chord-label;
+                    vertical-alignment: center;
+                    color: #cccccc;
+                }
+                Button {
+                    text: "chord >";
+                    clicked => { root.chord-next(); }
+                }
+                Button {
+                    text: root.playing ? "stop" : "play";
+                    clicked => { root.play-toggled(); }
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: start;
+            spacing: 2px;
+            for line in root.tab-lines: Text {
+                text: line;
+                font-family: "Menlo";
+                color: #cccccc;
+                font-size: 13px;
+            }
+        }
+
+        Fretboard {
+            vertical-stretch: 1;
+            dots: root.dots;
+            string-indices: root.string-indices;
+            fret-numbers: root.fret-numbers;
+            fret-labels: root.fret-labels;
+            inlay-frets: root.inlay-frets;
+            inlay-double-frets: root.inlay-double-frets;
+            string-count: root.string-count;
+            max-fret: root.max-fret;
+            tick: root.tick;
+            bloom-start: root.bloom-start;
+            sweep: root.sweep;
+            current-slot: root.current-slot;
+            slot-frac: root.slot-frac;
+            slot-positions: root.slot-positions;
+            slot-count: root.slot-count;
+            dot-clicked(string-index, fret) => {
+                root.dot-clicked(string-index, fret);
+            }
+        }
+    }
+}

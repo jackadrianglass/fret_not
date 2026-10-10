@@ -50,7 +50,7 @@ mod tests {
     }
 
     fn standard_instrument() -> Instrument {
-        Instrument::create_uniform(tuning::standard(), 22)
+        Instrument::new_uniform(tuning::standard(), 22)
     }
 
     #[test]

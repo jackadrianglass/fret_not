@@ -13,14 +13,14 @@ pub struct Instrument {
 }
 
 impl Instrument {
-    pub fn create(tuning: Tuning, fret_count: Vec<i32>) -> Instrument {
+    pub fn new(tuning: Tuning, fret_count: Vec<i32>) -> Instrument {
         if fret_count.len() != tuning::string_count(&tuning) {
-            panic!("Instrument::create: one fret count per string is required");
+            panic!("one fret count per string is required");
         }
         Instrument { tuning, fret_count }
     }
 
-    pub fn create_uniform(tuning: Tuning, fret_count: i32) -> Instrument {
+    pub fn new_uniform(tuning: Tuning, fret_count: i32) -> Instrument {
         let count = tuning::string_count(&tuning);
         Instrument {
             tuning,
@@ -51,7 +51,7 @@ impl Instrument {
     }
 
     pub fn pitch_class_at(&self, position: FretboardPosition) -> PitchClass {
-        PitchClass::of_int(self.semitone_at(position))
+        PitchClass::from_int(self.semitone_at(position))
     }
 
     // Lowest and highest sounding semitone reachable on the instrument.
@@ -74,19 +74,19 @@ mod tests {
     }
 
     fn standard_instrument() -> Instrument {
-        Instrument::create_uniform(tuning::standard(), 22)
+        Instrument::new_uniform(tuning::standard(), 22)
     }
 
     #[test]
-    #[should_panic(expected = "Instrument::create: one fret count per string is required")]
-    fn create_rejects_a_fret_count_per_string_mismatch() {
+    #[should_panic(expected = "one fret count per string is required")]
+    fn new_rejects_a_fret_count_per_string_mismatch() {
         let tuning: Tuning = tuning::standard();
-        Instrument::create(tuning, vec![22, 22, 22, 22, 22]);
+        Instrument::new(tuning, vec![22, 22, 22, 22, 22]);
     }
 
     #[test]
     fn playable_respects_per_string_fret_counts() {
-        let uneven = Instrument::create(tuning::standard(), vec![22, 22, 22, 22, 22, 24]);
+        let uneven = Instrument::new(tuning::standard(), vec![22, 22, 22, 22, 22, 24]);
         assert!(uneven.playable(position(5, 24)), "high E fret 24 playable");
         assert!(
             !uneven.playable(position(4, 24)),
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn max_fret_is_the_widest_string() {
-        let uneven = Instrument::create(tuning::standard(), vec![22, 22, 22, 22, 22, 24]);
+        let uneven = Instrument::new(tuning::standard(), vec![22, 22, 22, 22, 22, 24]);
         assert_eq!(uneven.max_fret(), 24, "max fret");
     }
 

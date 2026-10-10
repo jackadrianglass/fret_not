@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::pitch_class::PitchClass;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -11,7 +13,7 @@ pub enum Letter {
     B,
 }
 
-pub const ALL: [Letter; 7] = [
+pub const LETTERS: [Letter; 7] = [
     Letter::C,
     Letter::D,
     Letter::E,
@@ -34,27 +36,15 @@ impl Letter {
         }
     }
 
-    pub fn of_index(i: i32) -> Letter {
-        ALL[i.rem_euclid(7) as usize]
+    pub fn from_index(i: i32) -> Letter {
+        LETTERS[i.rem_euclid(7) as usize]
     }
 
     pub fn offset(self, n: i32) -> Letter {
-        Letter::of_index(self.index() as i32 + n)
+        Letter::from_index(self.index() as i32 + n)
     }
 
-    pub fn to_pitch_class(self) -> PitchClass {
-        match self {
-            Letter::C => PitchClass::C,
-            Letter::D => PitchClass::D,
-            Letter::E => PitchClass::E,
-            Letter::F => PitchClass::F,
-            Letter::G => PitchClass::G,
-            Letter::A => PitchClass::A,
-            Letter::B => PitchClass::B,
-        }
-    }
-
-    pub fn to_string(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Letter::C => "C",
             Letter::D => "D",
@@ -67,15 +57,37 @@ impl Letter {
     }
 }
 
+impl From<Letter> for PitchClass {
+    fn from(letter: Letter) -> PitchClass {
+        match letter {
+            Letter::C => PitchClass::C,
+            Letter::D => PitchClass::D,
+            Letter::E => PitchClass::E,
+            Letter::F => PitchClass::F,
+            Letter::G => PitchClass::G,
+            Letter::A => PitchClass::A,
+            Letter::B => PitchClass::B,
+        }
+    }
+}
+
+impl fmt::Display for Letter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ALL, Letter};
+    use super::{LETTERS, Letter};
+    use crate::pitch_class::PitchClass;
 
     #[test]
     fn naturals_are_not_the_full_chromatic_set() {
         assert_eq!(
-            ALL.iter()
-                .map(|letter| letter.to_pitch_class().to_int())
+            LETTERS
+                .iter()
+                .map(|letter| i32::from(PitchClass::from(*letter)))
                 .collect::<Vec<_>>(),
             vec![0, 2, 4, 5, 7, 9, 11],
             "natural letters"
@@ -86,7 +98,7 @@ mod tests {
     fn offset_wraps_around_the_letter_cycle() {
         assert_eq!(
             (1..=6)
-                .map(|i| Letter::F.offset(i).to_string())
+                .map(|i| Letter::F.offset(i).as_str())
                 .collect::<Vec<_>>(),
             vec!["G", "A", "B", "C", "D", "E"],
             "F stepped forward six letters"
@@ -96,20 +108,20 @@ mod tests {
     #[test]
     fn negative_offset_also_wraps() {
         assert_eq!(
-            Letter::C.offset(-1).to_string(),
+            Letter::C.offset(-1).as_str(),
             "B",
             "C stepped back one letter"
         );
     }
 
     #[test]
-    fn of_index_round_trips_through_index() {
-        for letter in ALL {
+    fn from_index_round_trips_through_index() {
+        for letter in LETTERS {
             assert_eq!(
                 letter,
-                Letter::of_index(letter.index() as i32),
+                Letter::from_index(letter.index() as i32),
                 "{} round trips",
-                letter.to_string()
+                letter.as_str()
             );
         }
     }

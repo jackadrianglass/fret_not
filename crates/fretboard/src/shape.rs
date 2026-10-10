@@ -34,7 +34,7 @@ pub fn scale_notes(degrees: &[ScaleDegree], start: i32, count: i32) -> Vec<Degre
 fn start_semitone(instrument: &Instrument, key: Key, anchor: FretboardPosition) -> i32 {
     let anchor_semitone = instrument.semitone_at(anchor);
     anchor_semitone
-        + (key.tonic_pitch_class().to_int() - PitchClass::of_int(anchor_semitone).to_int())
+        + (i32::from(key.tonic_pitch_class()) - i32::from(PitchClass::from_int(anchor_semitone)))
             .rem_euclid(12)
 }
 
@@ -100,7 +100,7 @@ mod tests {
     use relative::scales;
 
     fn c_major() -> Key {
-        Key::create(SpelledPitch::natural(Letter::C), Quality::Major)
+        Key::new(SpelledPitch::natural(Letter::C), Quality::Major)
     }
 
     fn ionian() -> Mode {
@@ -115,7 +115,7 @@ mod tests {
     }
 
     fn instrument() -> Instrument {
-        Instrument::create_uniform(tuning::standard(), 22)
+        Instrument::new_uniform(tuning::standard(), 22)
     }
 
     fn as_pairs(shape: &[FretboardPosition]) -> Vec<(usize, i32)> {
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn scale_notes_cycles_degrees_with_octave_carry() {
-        let notes = scale_notes(&ScaleDegree::diatonic(), 0, 9);
+        let notes = scale_notes(&ScaleDegree::DIATONIC, 0, 9);
         assert_eq!(
             notes
                 .iter()
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn scale_notes_starts_midway_through_the_cycle() {
-        let notes = scale_notes(&ScaleDegree::diatonic(), 5, 3);
+        let notes = scale_notes(&ScaleDegree::DIATONIC, 5, 3);
         assert_eq!(
             notes
                 .iter()
@@ -168,7 +168,7 @@ mod tests {
             &instrument(),
             c_major(),
             ionian(),
-            &ScaleDegree::diatonic(),
+            &ScaleDegree::DIATONIC,
             3,
             open_low_e(),
         )
@@ -247,12 +247,12 @@ mod tests {
 
     #[test]
     fn shapes_reaching_past_the_fret_limit_are_omitted() {
-        let three_fret_instrument = Instrument::create_uniform(tuning::standard(), 3);
+        let three_fret_instrument = Instrument::new_uniform(tuning::standard(), 3);
         let shapes = positions(
             &three_fret_instrument,
             c_major(),
             ionian(),
-            &ScaleDegree::diatonic(),
+            &ScaleDegree::DIATONIC,
             3,
             open_low_e(),
         );
@@ -268,7 +268,7 @@ mod tests {
             &instrument(),
             c_major(),
             ionian(),
-            &scales::pentatonic_major(),
+            &scales::PENTATONIC_MAJOR,
             2,
             open_low_e(),
         );
@@ -299,7 +299,7 @@ mod tests {
             &instrument(),
             c_major(),
             ionian(),
-            &scales::arpeggio_major(),
+            &scales::ARPEGGIO_MAJOR,
             1,
             open_low_e(),
         );

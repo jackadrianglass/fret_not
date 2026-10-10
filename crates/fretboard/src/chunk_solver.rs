@@ -20,18 +20,6 @@ fn base_interval(key: Key, mode: Mode, dr: DegreeReference) -> i32 {
     DegreeReference { octave: 0, ..dr }.interval(key.tonic_pitch_class(), mode)
 }
 
-// Floor/ceil with the non-negative remainder, so negative windows (a degree
-// whose first in-range occurrence is below the anchor register) divide
-// correctly.
-fn floor_div(a: i32, b: i32) -> i32 {
-    let remainder = (a % b + b) % b;
-    (a - remainder) / b
-}
-
-fn ceil_div(a: i32, b: i32) -> i32 {
-    -floor_div(-a, b)
-}
-
 fn first_note_octaves(
     instrument: &Instrument,
     key: Key,
@@ -41,8 +29,8 @@ fn first_note_octaves(
     let (lowest, highest) = instrument.range();
     let base = base_interval(key, mode, dr);
     let root = root_semitone(key);
-    let octave_lo = ceil_div(lowest - root - base, 12);
-    let octave_hi = floor_div(highest - root - base, 12);
+    let octave_lo = -(-(lowest - root - base)).div_euclid(12);
+    let octave_hi = (highest - root - base).div_euclid(12);
     if octave_lo > octave_hi {
         Vec::new()
     } else {
@@ -105,9 +93,11 @@ fn chain(
                         tail,
                     )
                     .into_iter()
-                    .map(move |mut tail_positions| {
-                        tail_positions.insert(0, position);
-                        tail_positions
+                    .map(move |tail_positions| {
+                        let mut positions = Vec::with_capacity(tail_positions.len() + 1);
+                        positions.push(position);
+                        positions.extend(tail_positions);
+                        positions
                     })
                 })
                 .collect()
@@ -162,8 +152,10 @@ pub fn positions(
                 )
                 .into_iter()
                 .map(move |mut shape| {
-                    shape.insert(0, position);
-                    shape
+                    let mut with_first = Vec::with_capacity(shape.len() + 1);
+                    with_first.push(position);
+                    with_first.append(&mut shape);
+                    with_first
                 })
             })
             .collect();
@@ -186,11 +178,11 @@ mod tests {
     use relative::mode::Mode;
 
     fn c_major() -> Key {
-        Key::create(SpelledPitch::natural(Letter::C), Quality::Major)
+        Key::new(SpelledPitch::natural(Letter::C), Quality::Major)
     }
 
     fn instrument() -> Instrument {
-        Instrument::create_uniform(tuning::standard(), 22)
+        Instrument::new_uniform(tuning::standard(), 22)
     }
 
     fn low_e_fret_8() -> FretboardPosition {

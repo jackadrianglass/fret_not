@@ -1,13 +1,26 @@
-use absolute::letter::{ALL, Letter};
+use std::ops::Deref;
+
+use absolute::letter::{LETTERS, Letter};
 use absolute::note::Note;
 use absolute::pitch_class::PitchClass;
 use absolute::spelled_pitch::SpelledPitch;
 
 // Open-string pitches from lowest to highest, as absolute SPN notes.
-pub type Tuning = Vec<Note>;
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Tuning(Vec<Note>);
 
-pub fn create(open_string_notes: Vec<Note>) -> Tuning {
-    open_string_notes
+impl Tuning {
+    pub fn new(open_string_notes: Vec<Note>) -> Tuning {
+        Tuning(open_string_notes)
+    }
+}
+
+impl Deref for Tuning {
+    type Target = [Note];
+
+    fn deref(&self) -> &[Note] {
+        &self.0
+    }
 }
 
 pub fn string_count(tuning: &Tuning) -> usize {
@@ -29,10 +42,11 @@ pub fn semitone_at(tuning: &Tuning, string_index: usize, fret: i32) -> i32 {
 }
 
 fn spelled_pitch_of_pitch_class(pitch_class: PitchClass) -> SpelledPitch {
-    ALL.iter()
+    LETTERS
+        .iter()
         .filter_map(|letter| {
             SpelledPitch::alteration_for(*letter, pitch_class)
-                .map(|alteration| SpelledPitch::create(*letter, alteration))
+                .map(|alteration| SpelledPitch::new(*letter, alteration))
         })
         .min_by(|a, b| {
             let a_semitones = a.alteration.semitones();
@@ -42,25 +56,20 @@ fn spelled_pitch_of_pitch_class(pitch_class: PitchClass) -> SpelledPitch {
                 .cmp(&b_semitones.abs())
                 .then(a_semitones.cmp(&b_semitones))
         })
-        .unwrap_or_else(|| {
-            panic!(
-                "no accidental spells pitch class {}",
-                pitch_class.to_string()
-            )
-        })
+        .unwrap_or_else(|| panic!("no accidental spells pitch class {}", pitch_class))
 }
 
 // Shift one string's open note by semitones, spelling the result with the
 // smallest accidental available. Drop tunings derive from [standard].
 pub fn retune_string(tuning: &Tuning, string_index: usize, semitones: i32) -> Tuning {
-    tuning
+    let retuned: Vec<Note> = tuning
         .iter()
         .enumerate()
         .map(|(i, note)| {
             if i == string_index {
-                let pitch_class = note.pitch_class().add(semitones);
+                let pitch_class = note.pitch_class() + semitones;
                 let spelled = spelled_pitch_of_pitch_class(pitch_class);
-                Note::create(
+                Note::new(
                     spelled,
                     (note.semitone() + semitones - spelled.semitone()) / 12 - 1,
                 )
@@ -68,18 +77,19 @@ pub fn retune_string(tuning: &Tuning, string_index: usize, semitones: i32) -> Tu
                 *note
             }
         })
-        .collect()
+        .collect();
+    Tuning::new(retuned)
 }
 
 pub fn standard() -> Tuning {
-    vec![
+    Tuning::new(vec![
         Note::natural(Letter::E, 2),
         Note::natural(Letter::A, 2),
         Note::natural(Letter::D, 3),
         Note::natural(Letter::G, 3),
         Note::natural(Letter::B, 3),
         Note::natural(Letter::E, 4),
-    ]
+    ])
 }
 
 pub fn drop_d() -> Tuning {
@@ -87,23 +97,25 @@ pub fn drop_d() -> Tuning {
 }
 
 pub fn standard_seven_string() -> Tuning {
-    let mut tuning = vec![Note::natural(Letter::B, 1)];
-    tuning.extend(standard());
-    tuning
+    let mut open_string_notes = vec![Note::natural(Letter::B, 1)];
+    open_string_notes.extend(standard().iter().copied());
+    Tuning::new(open_string_notes)
 }
 
 pub fn bass_four() -> Tuning {
-    standard()
-        .iter()
-        .take(4)
-        .map(|note| note.shift_octave(-1))
-        .collect()
+    Tuning::new(
+        standard()
+            .iter()
+            .take(4)
+            .map(|note| note.shift_octave(-1))
+            .collect(),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        Tuning, bass_four, create, drop_d, open_note, retune_string, semitone_at, standard,
+        Tuning, bass_four, drop_d, open_note, retune_string, semitone_at, standard,
         standard_seven_string, string_count,
     };
 
@@ -170,10 +182,5 @@ mod tests {
             vec!["E2", "G2", "D3", "G3", "B3", "E4"],
             "A string down a whole step, others untouched"
         );
-    }
-
-    #[test]
-    fn create_is_the_identity_on_the_notes() {
-        assert_eq!(open_notes(&create(standard())), open_notes(&standard()));
     }
 }

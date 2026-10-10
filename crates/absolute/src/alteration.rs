@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Alteration {
     Natural,
@@ -18,7 +20,7 @@ impl Alteration {
         }
     }
 
-    pub fn of_semitones(semitones: i32) -> Option<Alteration> {
+    pub fn from_semitones(semitones: i32) -> Option<Alteration> {
         match semitones {
             0 => Some(Alteration::Natural),
             1 => Some(Alteration::Sharp),
@@ -29,7 +31,7 @@ impl Alteration {
         }
     }
 
-    pub fn to_string(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Alteration::Natural => "",
             Alteration::Sharp => "#",
@@ -37,6 +39,12 @@ impl Alteration {
             Alteration::DoubleSharp => "##",
             Alteration::DoubleFlat => "bb",
         }
+    }
+}
+
+impl fmt::Display for Alteration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -77,11 +85,11 @@ mod tests {
     fn to_string_matches_notation() {
         assert_eq!(
             vec![
-                Alteration::DoubleFlat.to_string(),
-                Alteration::Flat.to_string(),
-                Alteration::Natural.to_string(),
-                Alteration::Sharp.to_string(),
-                Alteration::DoubleSharp.to_string(),
+                Alteration::DoubleFlat.as_str(),
+                Alteration::Flat.as_str(),
+                Alteration::Natural.as_str(),
+                Alteration::Sharp.as_str(),
+                Alteration::DoubleSharp.as_str(),
             ],
             vec!["bb", "b", "", "#", "##"],
             "symbols"

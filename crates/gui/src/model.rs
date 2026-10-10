@@ -15,7 +15,6 @@ use relative::scale_degree::ScaleDegree;
 pub const PROGRESSION: [i32; 3] = [1, 4, 5];
 pub const PROGRESSION_LABELS: [&str; 3] = ["I", "IV", "V"];
 pub const MAX_SLOTS: usize = 12;
-pub const QUALITY_NAMES: [&str; 2] = ["Major", "Minor"];
 
 // The solver's exploration window: fingerings must stay within this fret
 // distance of the anchor.
@@ -26,42 +25,30 @@ pub const SOLVER_ANCHOR: FretboardPosition = FretboardPosition {
 pub const SOLVER_FRET_CAP: i32 = 6;
 
 pub fn instrument() -> Instrument {
-    Instrument::create_uniform(tuning::standard(), 22)
+    Instrument::new_uniform(tuning::standard(), 22)
 }
 
-pub fn tonic_list() -> Vec<SpelledPitch> {
-    use Alteration::{Flat, Sharp};
-    use Letter::{A, B, C, D, E, F, G};
-    vec![
-        SpelledPitch::natural(C),
-        SpelledPitch::create(D, Flat),
-        SpelledPitch::natural(D),
-        SpelledPitch::create(E, Flat),
-        SpelledPitch::natural(E),
-        SpelledPitch::natural(F),
-        SpelledPitch::create(F, Sharp),
-        SpelledPitch::natural(G),
-        SpelledPitch::create(A, Flat),
-        SpelledPitch::natural(A),
-        SpelledPitch::create(B, Flat),
-        SpelledPitch::natural(B),
-    ]
-}
+pub const TONICS: [SpelledPitch; 12] = [
+    SpelledPitch::natural(Letter::C),
+    SpelledPitch::new(Letter::D, Alteration::Flat),
+    SpelledPitch::natural(Letter::D),
+    SpelledPitch::new(Letter::E, Alteration::Flat),
+    SpelledPitch::natural(Letter::E),
+    SpelledPitch::natural(Letter::F),
+    SpelledPitch::new(Letter::F, Alteration::Sharp),
+    SpelledPitch::natural(Letter::G),
+    SpelledPitch::new(Letter::A, Alteration::Flat),
+    SpelledPitch::natural(Letter::A),
+    SpelledPitch::new(Letter::B, Alteration::Flat),
+    SpelledPitch::natural(Letter::B),
+];
 
-pub fn key_of(tonic_index: usize, quality: Quality) -> Key {
-    Key::create(tonic_list()[tonic_index], quality)
+pub fn key_of(tonic: SpelledPitch, quality: Quality) -> Key {
+    Key::new(tonic, quality)
 }
 
 pub fn mode_of(quality: Quality) -> Mode {
-    Key::mode_of_quality(quality)
-}
-
-pub fn quality_named(name: &str) -> Option<Quality> {
-    match name {
-        "Major" => Some(Quality::Major),
-        "Minor" => Some(Quality::Minor),
-        _ => None,
-    }
+    Mode::from(quality)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -122,15 +109,15 @@ pub fn board(
 }
 
 pub fn initial_chunk() -> Chunk {
-    vec![
+    Chunk::new(vec![
         Slot::Note(DegreeReference::natural(1, 0)),
-        Slot::Note(DegreeReference::create(
-            ScaleDegree::create(3, Alteration::Flat),
+        Slot::Note(DegreeReference::new(
+            ScaleDegree::new(3, Alteration::Flat),
             0,
         )),
         Slot::Note(DegreeReference::natural(5, 0)),
         Slot::Note(DegreeReference::natural(6, 0)),
-    ]
+    ])
 }
 
 // Every fingering of the chunk over one chord root, ranked by reach distance,

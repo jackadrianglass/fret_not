@@ -63,7 +63,8 @@ Just write yourself notes to be kind to your future self.
 ```
 crates/absolute/src/       what the note IS — SPN vocabulary, imports nothing internal
   pitch_class.rs           newtype over int mod 12 + chromatic names; all arithmetic
-                           goes through of_int/add (rem_euclid, so negatives wrap)
+                           goes through from_int and the Add/Sub impls (rem_euclid,
+                           so negatives wrap)
   alteration.rs            Natural | Sharp | Flat | DoubleSharp | DoubleFlat. Ord is
                            hand-written by semitones, NOT declaration order — say why
                            at the definition (it already does)
@@ -84,21 +85,23 @@ crates/relative/src/       what the degree IS — degree-relative music, no fret
   scale_degree.rs          {degree: 1..7, alteration} — a notated scale degree (1, b3,
                            #4). pitch_class() is derived (root + mode), never stored;
                            the 7 degrees of any mode are the same notational objects
-                           (diatonic()). spelled() turns a degree into an SPN spelling
-                           (root letter stepped degree-1 letters up) and panics when
-                           the spelling would need more than a double sharp/flat
+                           (ScaleDegree::DIATONIC). spelled() turns a degree into an
+                           SPN spelling (root letter stepped degree-1 letters up) and
+                           panics when the spelling would need more than a double
+                           sharp/flat
   mode.rs                  7 diatonic modes. A mode is a *rotation* of the major
                            scale — root_offset_semitones() indexes into
                            [0,2,4,5,7,9,11], pitch_classes() rotates the parent scale
   key.rs                   {tonic: SpelledPitch, Major|Minor}. mode_root() lifts the
                            tonic to any mode via the parent-major trick and returns a
                            *spelled* pitch; mode_pitch_classes() is the scale as
-                           pitch classes; mode_of_quality() maps Major/Minor to
+                           pitch classes; From<Quality> for Mode maps Major/Minor to
                            Ionian/Aeolian
-  scales.rs                degree-subset presets: pentatonic_major/minor (1 2 3 5 6 /
-                           1 3 4 5 7), arpeggio_major/minor (triads; the minor preset
-                           is the same 1 3 5 — scale-relative degrees already spell the
-                           minor triad). These lists drive highlighting and shapes.
+  scales.rs                degree-subset presets as const arrays: PENTATONIC_MAJOR/
+                           MINOR (1 2 3 5 6 / 1 3 4 5 7), ARPEGGIO_MAJOR/MINOR (triads;
+                           the minor preset is the same 1 3 5 — scale-relative degrees
+                           already spell the minor triad). These lists drive
+                           highlighting and shapes.
   degree_reference.rs     {scale_degree, octave} — THE abstract note, and the chunk
                            layer's domain type. Octave is TONIC-anchored: octave 0
                            spans from the tonic up to the octave above, so degree 1
@@ -108,20 +111,21 @@ crates/relative/src/       what the degree IS — degree-relative music, no fret
   chunk.rs                 the movable pattern layer, most conceptually central:
                            Slot::Rest | Slot(DegreeReference) (slot presence IS the
                            rhythm; all slots equal duration — deliberate
-                           simplification); Chunk = Vec<Slot>; reframe() rotates
-                           degrees mod 7 with octave carry — this is what makes chunks
-                           transposable; apply_progression() repeats a chunk per chord
-                           root (e.g. [1, 4, 5])
+                           simplification); Chunk is a newtype over Vec<Slot>
+                           (Deref to the slice; push/remove as module functions);
+                           reframe() rotates degrees mod 7 with octave carry — this is
+                           what makes chunks transposable; apply_progression() repeats
+                           a chunk per chord root (e.g. [1, 4, 5])
 
 crates/fretboard/src/      where you PLAY it — relative + absolute → strings and frets
   fretboard_position.rs    {string_index: usize, fret: i32} — a concrete position
-  tuning.rs                open strings as absolute SPN notes (Tuning = Vec<Note>;
-                           standard = E2 A2 D3 G3 B3 E4), low to high. Absolute pitch is
-                           the point: pitch classes cannot distinguish E2 from E3
-                           (Nashville tuning, bass, octave-displaced tunings).
-                           retune_string() shifts one string and spells minimally;
-                           presets (standard, drop_d, standard_seven_string, bass_four)
-                           derive from standard
+  tuning.rs                open strings as absolute SPN notes (Tuning is a newtype over
+                           Vec<Note>, Deref to the slice; standard = E2 A2 D3 G3 B3
+                           E4), low to high. Absolute pitch is the point: pitch
+                           classes cannot distinguish E2 from E3 (Nashville tuning,
+                           bass, octave-displaced tunings). retune_string() shifts one
+                           string and spells minimally; presets (standard, drop_d,
+                           standard_seven_string, bass_four) derive from standard
   instrument.rs            tuning + fret count *per string*. Everything that asks
                            "can this be played here" (playable, range) goes through an
                            instrument; semitone_at() resolves a position to sounding
@@ -162,11 +166,14 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
 
 crates/gui/src/            where you SEE it — the iced 0.14 GUI
   main.rs                  app wiring: State/Message/update/view — control bar, chunk strip,
-                           solver row, tab; all four animations tick via a time::every(16ms)
+                           solver row, tab; the board (positions + labels) is computed
+                           in update on key/label-mode change and the view only
+                           interpolates; all four animations tick via a time::every(16ms)
                            subscription driving `now` through state
-  model.rs                 view-state glue only: tonic list, board assembly over
-                           degrees_in_window, solver wiring, tab lines — music knowledge
-                           stays in the core crates
+  model.rs                 view-state glue only: TONICS const + typed pick_list
+                           payloads, board assembly over degrees_in_window, solver
+                           wiring, tab lines — music knowledge stays in the core
+                           crates
   fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; visual factors
                            are pre-interpolated by the view, the canvas only paints
 ```
@@ -206,6 +213,6 @@ House style:
   with the invariant documented on the function that panics.
 - Small value types are `Copy` (PitchClass, Letter, Alteration, SpelledPitch,
   Note, FretboardPosition, Reach, ScaleDegree, DegreeReference, Slot).
-- Tuning/Chunk are type aliases over `Vec` with module-level functions;
-  structs (Instrument, Key) carry methods.
+- Tuning/Chunk are newtypes over `Vec` (Deref to the slice) with module-level
+  functions; structs (Instrument, Key) carry methods.
 - No persistence anywhere yet — a deliberate deferral, not an oversight.

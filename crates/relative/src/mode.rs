@@ -1,3 +1,5 @@
+use std::fmt;
+
 use absolute::pitch_class::PitchClass;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -11,7 +13,7 @@ pub enum Mode {
     Locrian,
 }
 
-pub const ALL: [Mode; 7] = [
+pub const MODES: [Mode; 7] = [
     Mode::Ionian,
     Mode::Dorian,
     Mode::Phrygian,
@@ -24,7 +26,7 @@ pub const ALL: [Mode; 7] = [
 const MAJOR_SCALE_INTERVALS: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
 
 impl Mode {
-    pub fn name(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Mode::Ionian => "Ionian",
             Mode::Dorian => "Dorian",
@@ -56,10 +58,10 @@ impl Mode {
     // indexes into the parent major scale's intervals, so the mode's
     // pitches are the parent scale rotated to start at the mode's root.
     pub fn pitch_classes(self, root: PitchClass) -> Vec<PitchClass> {
-        let parent_major_root = root.add(-self.root_offset_semitones());
+        let parent_major_root = root - self.root_offset_semitones();
         let parent_scale: Vec<PitchClass> = MAJOR_SCALE_INTERVALS
             .iter()
-            .map(|interval| parent_major_root.add(*interval))
+            .map(|interval| parent_major_root + *interval)
             .collect();
         let idx = self.rotation_index();
         parent_scale
@@ -71,6 +73,12 @@ impl Mode {
     }
 }
 
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Mode;
@@ -78,7 +86,7 @@ mod tests {
 
     #[test]
     fn dorian_from_root_matches_rotation() {
-        let root = PitchClass::of_int(2);
+        let root = PitchClass::from_int(2);
         assert_eq!(
             Mode::Dorian
                 .pitch_classes(root)

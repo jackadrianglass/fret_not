@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::alteration::Alteration;
 use crate::letter::Letter;
 use crate::pitch_class::PitchClass;
@@ -9,11 +11,11 @@ pub struct SpelledPitch {
 }
 
 impl SpelledPitch {
-    pub fn create(letter: Letter, alteration: Alteration) -> SpelledPitch {
+    pub const fn new(letter: Letter, alteration: Alteration) -> SpelledPitch {
         SpelledPitch { letter, alteration }
     }
 
-    pub fn natural(letter: Letter) -> SpelledPitch {
+    pub const fn natural(letter: Letter) -> SpelledPitch {
         SpelledPitch {
             letter,
             alteration: Alteration::Natural,
@@ -24,53 +26,54 @@ impl SpelledPitch {
     // into an octave: Cb = -1, B# = 12. This is what lets Note handle the
     // B/C octave wrap correctly.
     pub fn semitone(self) -> i32 {
-        self.letter.to_pitch_class().to_int() + self.alteration.semitones()
+        i32::from(PitchClass::from(self.letter)) + self.alteration.semitones()
     }
 
     pub fn pitch_class(self) -> PitchClass {
-        PitchClass::of_int(self.semitone())
+        PitchClass::from_int(self.semitone())
     }
 
     // The accidental that makes `letter` sound as `pitch_class`, if one
     // exists within double sharp/flat.
     pub fn alteration_for(letter: Letter, pitch_class: PitchClass) -> Option<Alteration> {
-        let natural_pitch_class = letter.to_pitch_class();
-        let mut delta = (pitch_class.to_int() - natural_pitch_class.to_int()).rem_euclid(12);
+        let natural_pitch_class = PitchClass::from(letter);
+        let mut delta = (i32::from(pitch_class) - i32::from(natural_pitch_class)).rem_euclid(12);
         if delta > 6 {
             delta -= 12;
         }
-        Alteration::of_semitones(delta)
+        Alteration::from_semitones(delta)
     }
 
-    pub fn of_pitch_class_exn(letter: Letter, pitch_class: PitchClass) -> SpelledPitch {
+    // Panics when no accidental within double sharp/flat makes `letter`
+    // sound as `pitch_class`.
+    pub fn expect_pitch_class(letter: Letter, pitch_class: PitchClass) -> SpelledPitch {
         match SpelledPitch::alteration_for(letter, pitch_class) {
             Some(alteration) => SpelledPitch { letter, alteration },
-            None => panic!(
-                "no accidental makes {} sound as {}",
-                letter.to_string(),
-                pitch_class.to_string()
-            ),
+            None => panic!("no accidental makes {} sound as {}", letter, pitch_class),
         }
     }
+}
 
-    pub fn to_string(self) -> String {
-        format!("{}{}", self.letter.to_string(), self.alteration.to_string())
+impl fmt::Display for SpelledPitch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.letter, self.alteration)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Alteration, Letter, SpelledPitch};
+    use crate::pitch_class::PitchClass;
 
     #[test]
     fn to_string_spells_the_accidental() {
         assert_eq!(
             vec![
-                SpelledPitch::create(Letter::C, Alteration::Sharp).to_string(),
-                SpelledPitch::create(Letter::B, Alteration::Flat).to_string(),
+                SpelledPitch::new(Letter::C, Alteration::Sharp).to_string(),
+                SpelledPitch::new(Letter::B, Alteration::Flat).to_string(),
                 SpelledPitch::natural(Letter::F).to_string(),
-                SpelledPitch::create(Letter::E, Alteration::DoubleSharp).to_string(),
-                SpelledPitch::create(Letter::C, Alteration::DoubleFlat).to_string(),
+                SpelledPitch::new(Letter::E, Alteration::DoubleSharp).to_string(),
+                SpelledPitch::new(Letter::C, Alteration::DoubleFlat).to_string(),
             ],
             vec!["C#", "Bb", "F", "E##", "Cbb"],
             "spellings"
@@ -84,8 +87,8 @@ mod tests {
         // pitch classes.
         assert_eq!(
             vec![
-                SpelledPitch::create(Letter::C, Alteration::Flat).semitone(),
-                SpelledPitch::create(Letter::B, Alteration::Sharp).semitone(),
+                SpelledPitch::new(Letter::C, Alteration::Flat).semitone(),
+                SpelledPitch::new(Letter::B, Alteration::Sharp).semitone(),
             ],
             vec![-1, 12],
             "semitones"
@@ -96,15 +99,9 @@ mod tests {
     fn pitch_class_folds_through_the_wrap() {
         assert_eq!(
             vec![
-                SpelledPitch::create(Letter::C, Alteration::Flat)
-                    .pitch_class()
-                    .to_int(),
-                SpelledPitch::create(Letter::B, Alteration::Sharp)
-                    .pitch_class()
-                    .to_int(),
-                SpelledPitch::create(Letter::F, Alteration::Sharp)
-                    .pitch_class()
-                    .to_int(),
+                i32::from(SpelledPitch::new(Letter::C, Alteration::Flat).pitch_class()),
+                i32::from(SpelledPitch::new(Letter::B, Alteration::Sharp).pitch_class()),
+                i32::from(SpelledPitch::new(Letter::F, Alteration::Sharp).pitch_class()),
             ],
             vec![11, 0, 6],
             "pitch classes: Cb -> 11 (B), B# -> 0 (C), F# -> 6"
@@ -114,11 +111,8 @@ mod tests {
     #[test]
     fn alteration_for_picks_the_smallest_representable_accidental() {
         let of_pair = |(letter, pitch_class): (Letter, i32)| {
-            SpelledPitch::alteration_for(
-                letter,
-                crate::pitch_class::PitchClass::of_int(pitch_class),
-            )
-            .map(|alteration| alteration.semitones().to_string())
+            SpelledPitch::alteration_for(letter, PitchClass::from_int(pitch_class))
+                .map(|alteration| alteration.semitones().to_string())
         };
         // G sounding as F# is spelled Gb, C sounding as B is spelled Cb,
         // and no double accidental can stretch C to E.

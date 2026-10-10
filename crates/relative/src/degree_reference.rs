@@ -11,7 +11,7 @@ pub struct DegreeReference {
 }
 
 impl DegreeReference {
-    pub fn create(scale_degree: ScaleDegree, octave: i32) -> DegreeReference {
+    pub fn new(scale_degree: ScaleDegree, octave: i32) -> DegreeReference {
         DegreeReference {
             scale_degree,
             octave,
@@ -19,7 +19,7 @@ impl DegreeReference {
     }
 
     pub fn natural(degree: i32, octave: i32) -> DegreeReference {
-        DegreeReference::create(ScaleDegree::natural(degree), octave)
+        DegreeReference::new(ScaleDegree::natural(degree), octave)
     }
 
     // Semitones above the tonic. The octave is tonic-anchored: octave 0 spans
@@ -28,7 +28,7 @@ impl DegreeReference {
     // below the octave above the tonic.
     pub fn interval(self, root: PitchClass, mode: Mode) -> i32 {
         let pitch_class = self.scale_degree.pitch_class(root, mode);
-        (pitch_class.to_int() - root.to_int()).rem_euclid(12) + 12 * self.octave
+        (i32::from(pitch_class) - i32::from(root)).rem_euclid(12) + 12 * self.octave
     }
 
     // Absolute spelled note; [root] supplies both the spelling anchor and
@@ -36,7 +36,7 @@ impl DegreeReference {
     pub fn note(self, root: Note, mode: Mode) -> Note {
         let spelled = self.scale_degree.spelled(root.spelled_pitch, mode);
         let sounding = root.semitone() + self.interval(root.pitch_class(), mode);
-        Note::create(spelled, (sounding - spelled.semitone()) / 12 - 1)
+        Note::new(spelled, (sounding - spelled.semitone()) / 12 - 1)
     }
 }
 
@@ -51,16 +51,16 @@ mod tests {
     use absolute::pitch_class::PitchClass;
 
     fn altered(degree: i32, alteration: Alteration, octave: i32) -> DegreeReference {
-        DegreeReference::create(ScaleDegree::create(degree, alteration), octave)
+        DegreeReference::new(ScaleDegree::new(degree, alteration), octave)
     }
 
     #[test]
     fn interval_counts_semitones_above_the_tonic() {
         let root = PitchClass::C;
         assert_eq!(
-            ScaleDegree::diatonic()
+            ScaleDegree::DIATONIC
                 .iter()
-                .map(|sd| { DegreeReference::create(*sd, 0).interval(root, Mode::Ionian) })
+                .map(|sd| { DegreeReference::new(*sd, 0).interval(root, Mode::Ionian) })
                 .collect::<Vec<_>>(),
             vec![0, 2, 4, 5, 7, 9, 11],
             "intervals of the C major degrees at octave 0"
@@ -90,10 +90,10 @@ mod tests {
     fn note_resolves_to_spn_relative_to_a_root_note() {
         let c4 = Note::natural(Letter::C, 4);
         assert_eq!(
-            ScaleDegree::diatonic()
+            ScaleDegree::DIATONIC
                 .iter()
                 .map(|sd| {
-                    DegreeReference::create(*sd, 0)
+                    DegreeReference::new(*sd, 0)
                         .note(c4, Mode::Ionian)
                         .to_string()
                 })

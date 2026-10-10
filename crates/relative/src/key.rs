@@ -1,3 +1,5 @@
+use std::fmt;
+
 use absolute::pitch_class::PitchClass;
 use absolute::spelled_pitch::SpelledPitch;
 
@@ -9,6 +11,21 @@ pub enum Quality {
     Minor,
 }
 
+impl Quality {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Quality::Major => "Major",
+            Quality::Minor => "Minor",
+        }
+    }
+}
+
+impl fmt::Display for Quality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Key {
     pub tonic: SpelledPitch,
@@ -16,7 +33,7 @@ pub struct Key {
 }
 
 impl Key {
-    pub fn create(tonic: SpelledPitch, quality: Quality) -> Key {
+    pub fn new(tonic: SpelledPitch, quality: Quality) -> Key {
         Key { tonic, quality }
     }
 
@@ -27,9 +44,7 @@ impl Key {
     fn parent_major_root_pitch_class(self) -> PitchClass {
         match self.quality {
             Quality::Major => self.tonic_pitch_class(),
-            Quality::Minor => self
-                .tonic_pitch_class()
-                .add(-Mode::Aeolian.root_offset_semitones()),
+            Quality::Minor => self.tonic_pitch_class() - Mode::Aeolian.root_offset_semitones(),
         }
     }
 
@@ -38,15 +53,8 @@ impl Key {
             Quality::Major => self.tonic,
             Quality::Minor => {
                 let letter = self.tonic.letter.offset(2);
-                SpelledPitch::of_pitch_class_exn(letter, self.parent_major_root_pitch_class())
+                SpelledPitch::expect_pitch_class(letter, self.parent_major_root_pitch_class())
             }
-        }
-    }
-
-    pub fn mode_of_quality(quality: Quality) -> Mode {
-        match quality {
-            Quality::Major => Mode::Ionian,
-            Quality::Minor => Mode::Aeolian,
         }
     }
 
@@ -55,10 +63,8 @@ impl Key {
             .parent_major_root()
             .letter
             .offset(mode.rotation_index() as i32);
-        let pitch_class = self
-            .parent_major_root_pitch_class()
-            .add(mode.root_offset_semitones());
-        SpelledPitch::of_pitch_class_exn(letter, pitch_class)
+        let pitch_class = self.parent_major_root_pitch_class() + mode.root_offset_semitones();
+        SpelledPitch::expect_pitch_class(letter, pitch_class)
     }
 
     pub fn mode_pitch_classes(self, mode: Mode) -> Vec<PitchClass> {
@@ -66,19 +72,29 @@ impl Key {
     }
 }
 
+impl From<Quality> for Mode {
+    fn from(quality: Quality) -> Mode {
+        match quality {
+            Quality::Major => Mode::Ionian,
+            Quality::Minor => Mode::Aeolian,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Key, Quality};
-    use crate::mode::{ALL, Mode};
+    use crate::mode::{MODES, Mode};
     use absolute::alteration::Alteration;
     use absolute::letter::Letter;
     use absolute::spelled_pitch::SpelledPitch;
 
     #[test]
     fn mode_root_spells_each_mode_of_c_major() {
-        let key = Key::create(SpelledPitch::natural(Letter::C), Quality::Major);
+        let key = Key::new(SpelledPitch::natural(Letter::C), Quality::Major);
         assert_eq!(
-            ALL.iter()
+            MODES
+                .iter()
                 .map(|mode| key.mode_root(*mode).to_string())
                 .collect::<Vec<_>>(),
             vec!["C", "D", "E", "F", "G", "A", "B"],
@@ -90,9 +106,10 @@ mod tests {
     fn mode_root_spells_each_mode_of_a_minor() {
         // Ionian comes first in Mode::ALL, so a minor key's mode roots run
         // from the parent major's tonic, not the minor tonic.
-        let key = Key::create(SpelledPitch::natural(Letter::A), Quality::Minor);
+        let key = Key::new(SpelledPitch::natural(Letter::A), Quality::Minor);
         assert_eq!(
-            ALL.iter()
+            MODES
+                .iter()
                 .map(|mode| key.mode_root(*mode).to_string())
                 .collect::<Vec<_>>(),
             vec!["C", "D", "E", "F", "G", "A", "B"],
@@ -102,8 +119,8 @@ mod tests {
 
     #[test]
     fn mode_root_spells_accidentals_off_the_parent_major() {
-        let f_sharp_minor = Key::create(
-            SpelledPitch::create(Letter::F, Alteration::Sharp),
+        let f_sharp_minor = Key::new(
+            SpelledPitch::new(Letter::F, Alteration::Sharp),
             Quality::Minor,
         );
         assert_eq!(
@@ -116,8 +133,8 @@ mod tests {
             "A",
             "Ionian root of F# minor is the parent major A"
         );
-        let e_flat_major = Key::create(
-            SpelledPitch::create(Letter::E, Alteration::Flat),
+        let e_flat_major = Key::new(
+            SpelledPitch::new(Letter::E, Alteration::Flat),
             Quality::Major,
         );
         assert_eq!(
@@ -129,7 +146,7 @@ mod tests {
 
     #[test]
     fn mode_pitch_classes_are_the_modes_scale() {
-        let key = Key::create(SpelledPitch::natural(Letter::C), Quality::Major);
+        let key = Key::new(SpelledPitch::natural(Letter::C), Quality::Major);
         assert_eq!(
             key.mode_pitch_classes(Mode::Dorian)
                 .iter()
@@ -141,8 +158,8 @@ mod tests {
     }
 
     #[test]
-    fn mode_of_quality_round_trips() {
-        assert_eq!(Key::mode_of_quality(Quality::Major), Mode::Ionian);
-        assert_eq!(Key::mode_of_quality(Quality::Minor), Mode::Aeolian);
+    fn from_quality_maps_to_modes() {
+        assert_eq!(Mode::from(Quality::Major), Mode::Ionian);
+        assert_eq!(Mode::from(Quality::Minor), Mode::Aeolian);
     }
 }

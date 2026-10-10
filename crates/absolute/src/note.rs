@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::pitch_class::PitchClass;
 use crate::spelled_pitch::SpelledPitch;
 
@@ -12,23 +14,23 @@ pub struct Note {
 }
 
 impl Note {
-    pub fn create(spelled_pitch: SpelledPitch, octave: i32) -> Note {
+    pub fn new(spelled_pitch: SpelledPitch, octave: i32) -> Note {
         Note {
             spelled_pitch,
             octave,
         }
     }
 
-    pub fn of_parts(
+    pub fn from_parts(
         letter: crate::letter::Letter,
         alteration: crate::alteration::Alteration,
         octave: i32,
     ) -> Note {
-        Note::create(SpelledPitch::create(letter, alteration), octave)
+        Note::new(SpelledPitch::new(letter, alteration), octave)
     }
 
     pub fn natural(letter: crate::letter::Letter, octave: i32) -> Note {
-        Note::create(SpelledPitch::natural(letter), octave)
+        Note::new(SpelledPitch::natural(letter), octave)
     }
 
     // Sounding semitones above C0; 12 * (octave + 1) + spelled semitone.
@@ -37,11 +39,7 @@ impl Note {
     }
 
     pub fn pitch_class(self) -> PitchClass {
-        PitchClass::of_int(self.semitone())
-    }
-
-    pub fn to_string(self) -> String {
-        format!("{}{}", self.spelled_pitch.to_string(), self.octave)
+        PitchClass::from_int(self.semitone())
     }
 
     pub fn shift_octave(self, n: i32) -> Note {
@@ -49,6 +47,12 @@ impl Note {
             spelled_pitch: self.spelled_pitch,
             octave: self.octave + n,
         }
+    }
+}
+
+impl fmt::Display for Note {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.spelled_pitch, self.octave)
     }
 }
 
@@ -75,7 +79,7 @@ mod tests {
     use crate::letter::Letter;
 
     fn note(letter: Letter, octave: i32) -> Note {
-        Note::of_parts(letter, Alteration::Natural, octave)
+        Note::from_parts(letter, Alteration::Natural, octave)
     }
 
     #[test]
@@ -86,8 +90,8 @@ mod tests {
                 note(Letter::C, 4).semitone(),
                 note(Letter::A, 4).semitone(),
                 note(Letter::E, 2).semitone(),
-                Note::of_parts(Letter::B, Alteration::Sharp, 3).semitone(),
-                Note::of_parts(Letter::C, Alteration::Flat, 4).semitone(),
+                Note::from_parts(Letter::B, Alteration::Sharp, 3).semitone(),
+                Note::from_parts(Letter::C, Alteration::Flat, 4).semitone(),
                 note(Letter::C, 0).semitone(),
             ],
             vec![60, 69, 40, 60, 59, 12],
@@ -101,9 +105,9 @@ mod tests {
             vec![
                 note(Letter::C, 4).to_string(),
                 note(Letter::E, 2).to_string(),
-                Note::of_parts(Letter::C, Alteration::Sharp, 4).to_string(),
-                Note::of_parts(Letter::E, Alteration::Flat, 3).to_string(),
-                Note::of_parts(Letter::F, Alteration::DoubleSharp, 2).to_string(),
+                Note::from_parts(Letter::C, Alteration::Sharp, 4).to_string(),
+                Note::from_parts(Letter::E, Alteration::Flat, 3).to_string(),
+                Note::from_parts(Letter::F, Alteration::DoubleSharp, 2).to_string(),
             ],
             vec!["C4", "E2", "C#4", "Eb3", "F##2"],
             "names"
@@ -112,8 +116,8 @@ mod tests {
 
     #[test]
     fn compare_breaks_enharmonic_ties_by_spelling() {
-        let c_sharp_4 = Note::of_parts(Letter::C, Alteration::Sharp, 4);
-        let d_flat_4 = Note::of_parts(Letter::D, Alteration::Flat, 4);
+        let c_sharp_4 = Note::from_parts(Letter::C, Alteration::Sharp, 4);
+        let d_flat_4 = Note::from_parts(Letter::D, Alteration::Flat, 4);
         assert!(
             c_sharp_4 < d_flat_4,
             "C#4 sorts before Db4 on the spelling tiebreak"
@@ -124,14 +128,14 @@ mod tests {
     fn compare_orders_by_sounding_semitone() {
         let b3 = note(Letter::B, 3);
         let c4 = note(Letter::C, 4);
-        let c_sharp_4 = Note::of_parts(Letter::C, Alteration::Sharp, 4);
+        let c_sharp_4 = Note::from_parts(Letter::C, Alteration::Sharp, 4);
         assert!(b3 < c4 && c4 < c_sharp_4 && c_sharp_4 > b3, "B3 < C4 < C#4");
     }
 
     #[test]
     fn pitch_class_folds_through_the_octave_wrap() {
         assert!(
-            Note::of_parts(Letter::B, Alteration::Sharp, 3).pitch_class()
+            Note::from_parts(Letter::B, Alteration::Sharp, 3).pitch_class()
                 == crate::pitch_class::PitchClass::C,
             "B#3 sounds as C"
         );

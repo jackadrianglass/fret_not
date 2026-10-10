@@ -51,6 +51,10 @@ plan, in one sitting). Verified against docs.rs and the compiler.
 
 ## Misc
 
+- `pick_list` options and selection are any `T: Display + Clone` — typed
+  payloads (e.g. `SpelledPitch`, a `Quality`-like enum) go straight into the
+  list and come back typed in the message, no string round-tripping. Options
+  can be a `Vec<T>` (or `const` array `.to_vec()`); selected is `Some(T)`.
 - `use fretboard::fretboard;` shadows the crate name — `fretboard::tuning`
   then resolves against the module, not the crate. Import the functions
   (`use fretboard::fretboard::degree_at;`) instead.

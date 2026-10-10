@@ -12,7 +12,7 @@ use crate::tuning;
 // The tonic as a note in octave register 0; the octave anchor all degree
 // resolution in this module is relative to.
 pub fn root_note(key: Key) -> Note {
-    Note::create(key.tonic, 0)
+    Note::new(key.tonic, 0)
 }
 
 pub fn degree_note(key: Key, mode: Mode, dr: DegreeReference) -> Note {
@@ -57,7 +57,7 @@ pub fn degree_at(
     position: FretboardPosition,
 ) -> Option<DegreeReference> {
     let position_semitone = instrument.semitone_at(position);
-    let position_pitch_class = PitchClass::of_int(position_semitone);
+    let position_pitch_class = PitchClass::from_int(position_semitone);
     let matching_degree = key
         .mode_pitch_classes(mode)
         .iter()
@@ -106,7 +106,7 @@ mod tests {
     use relative::mode::Mode;
 
     fn c_major() -> Key {
-        Key::create(SpelledPitch::natural(Letter::C), Quality::Major)
+        Key::new(SpelledPitch::natural(Letter::C), Quality::Major)
     }
 
     fn ionian() -> Mode {
@@ -114,11 +114,11 @@ mod tests {
     }
 
     fn instrument() -> Instrument {
-        Instrument::create_uniform(tuning::standard(), 22)
+        Instrument::new_uniform(tuning::standard(), 22)
     }
 
     fn six_fret_instrument() -> Instrument {
-        Instrument::create_uniform(tuning::standard(), 6)
+        Instrument::new_uniform(tuning::standard(), 6)
     }
 
     fn as_pairs(positions: &[FretboardPosition]) -> Vec<(usize, i32)> {

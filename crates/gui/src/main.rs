@@ -7,11 +7,12 @@ use iced::animation::{Animation, Easing};
 use iced::widget::{button, canvas, column, container, pick_list, row, text, toggler};
 use iced::{Border, Color, Element, Fill, Font};
 
+use absolute::spelled_pitch::SpelledPitch;
 use fretboard::fretboard::degree_at;
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::tuning;
-use relative::chunk::{Chunk, Slot};
+use relative::chunk::{self, Chunk, Slot};
 use relative::key::Quality;
 use relative::scale_degree::ScaleDegree;
 
@@ -38,8 +39,8 @@ fn main() -> iced::Result {
 
 #[derive(Debug, Clone)]
 enum Message {
-    TonicPicked(String),
-    QualityPicked(String),
+    TonicPicked(SpelledPitch),
+    QualityPicked(Quality),
     NotesToggled(bool),
     SweepToggled(bool),
     Tick(Instant),
@@ -57,7 +58,7 @@ enum Message {
 
 struct FretNot {
     instrument: Instrument,
-    tonic_index: usize,
+    tonic: SpelledPitch,
     quality: Quality,
     notes_mode: bool,
     sweep: bool,
@@ -65,6 +66,7 @@ struct FretNot {
     hover: Option<FretboardPosition>,
     hover_anim: Animation<bool>,
     bloom: Vec<Animation<bool>>,
+    board: (Vec<model::Dot>, Vec<FretboardPosition>),
     chunk: Chunk,
     slot: usize,
     chord_index: usize,
@@ -79,7 +81,7 @@ impl FretNot {
     fn new() -> FretNot {
         let mut state = FretNot {
             instrument: model::instrument(),
-            tonic_index: 0,
+            tonic: model::TONICS[0],
             quality: Quality::Major,
             notes_mode: false,
             sweep: false,
@@ -87,6 +89,7 @@ impl FretNot {
             hover: None,
             hover_anim: Animation::new(false).quick().easing(Easing::EaseOutQuad),
             bloom: Vec::new(),
+            board: (Vec::new(), Vec::new()),
             chunk: model::initial_chunk(),
             slot: 0,
             chord_index: 0,
@@ -97,12 +100,13 @@ impl FretNot {
             now: Instant::now(),
         };
         state.resolve_fingerings();
+        state.refresh_board();
         state.rebuild_bloom();
         state
     }
 
     fn key(&self) -> relative::key::Key {
-        model::key_of(self.tonic_index, self.quality)
+        model::key_of(self.tonic, self.quality)
     }
 
     fn mode(&self) -> relative::mode::Mode {
@@ -133,11 +137,16 @@ impl FretNot {
         }
     }
 
+    // The board depends only on the key and label mode, so it is recomputed
+    // when those change; the frame loop only interpolates.
+    fn refresh_board(&mut self) {
+        self.board = model::board(&self.instrument, self.key(), self.mode(), self.label_mode());
+    }
+
     // One animation per visual, in the exact order the view zips against them:
     // in-key dots, then off-key positions.
     fn rebuild_bloom(&mut self) {
-        let (dots, off_key) =
-            model::board(&self.instrument, self.key(), self.mode(), self.label_mode());
+        let (dots, off_key) = &self.board;
         let now = self.now;
         self.bloom = dots
             .iter()
@@ -187,28 +196,26 @@ fn subscription(_state: &FretNot) -> iced::Subscription<Message> {
 fn update(state: &mut FretNot, message: Message) {
     match message {
         Message::Tick(now) => state.now = now,
-        Message::TonicPicked(name) => {
-            if let Some(index) = model::tonic_list()
-                .iter()
-                .position(|tonic| tonic.to_string() == name)
-            {
-                if index != state.tonic_index {
-                    state.tonic_index = index;
-                    state.resolve_fingerings();
-                    state.rebuild_bloom();
-                }
+        Message::TonicPicked(tonic) => {
+            if tonic != state.tonic {
+                state.tonic = tonic;
+                state.resolve_fingerings();
+                state.refresh_board();
+                state.rebuild_bloom();
             }
         }
-        Message::QualityPicked(name) => {
-            if let Some(quality) = model::quality_named(&name) {
-                if quality != state.quality {
-                    state.quality = quality;
-                    state.resolve_fingerings();
-                    state.rebuild_bloom();
-                }
+        Message::QualityPicked(quality) => {
+            if quality != state.quality {
+                state.quality = quality;
+                state.resolve_fingerings();
+                state.refresh_board();
+                state.rebuild_bloom();
             }
         }
-        Message::NotesToggled(enabled) => state.notes_mode = enabled,
+        Message::NotesToggled(enabled) => {
+            state.notes_mode = enabled;
+            state.refresh_board();
+        }
         Message::SweepToggled(enabled) => state.sweep = enabled,
         Message::Hovered(hover) => {
             if state.hover != hover {
@@ -227,13 +234,13 @@ fn update(state: &mut FretNot, message: Message) {
         }
         Message::AddSlot => {
             if state.chunk.len() < model::MAX_SLOTS {
-                state.chunk.push(Slot::Rest);
+                chunk::push(&mut state.chunk, Slot::Rest);
                 state.resolve_fingerings();
             }
         }
         Message::RemoveSlot => {
             if !state.chunk.is_empty() {
-                state.chunk.remove(state.slot);
+                chunk::remove(&mut state.chunk, state.slot);
                 state.slot = state.slot.saturating_sub(1);
                 state.resolve_fingerings();
             }
@@ -283,10 +290,8 @@ fn sweep_wave(now: Instant, fret: i32) -> f32 {
 }
 
 fn view(state: &FretNot) -> Element<'_, Message> {
-    let key = state.key();
-    let mode = state.mode();
     let now = state.now;
-    let (dots, off_key) = model::board(&state.instrument, key, mode, state.label_mode());
+    let (dots, off_key) = &state.board;
 
     let hover_scale = state.hover_anim.interpolate(1.0, 1.35, now);
     let pulse = state.pulse();
@@ -337,19 +342,13 @@ fn view(state: &FretNot) -> Element<'_, Message> {
         row![
             text("fret_not").color(ACCENT),
             pick_list(
-                model::tonic_list()
-                    .iter()
-                    .map(|tonic| tonic.to_string())
-                    .collect::<Vec<_>>(),
-                Some(model::tonic_list()[state.tonic_index].to_string()),
+                model::TONICS.to_vec(),
+                Some(state.tonic),
                 Message::TonicPicked,
             ),
             pick_list(
-                model::QUALITY_NAMES
-                    .iter()
-                    .map(|name| name.to_string())
-                    .collect::<Vec<_>>(),
-                Some(model::QUALITY_NAMES[state.quality as usize].to_string(),),
+                vec![Quality::Major, Quality::Minor],
+                Some(state.quality),
                 Message::QualityPicked,
             ),
             toggler(state.notes_mode)

@@ -43,7 +43,7 @@ crates/
 - `relative` depends on `absolute`; `fretboard` depends on both. Upward imports
   no longer compile, where before they were only a convention.
 - Later: a `gui/` member (or several spike crates, one per toolkit candidate)
-  depending on the core crates.
+  depending on the core crates. (Done: `crates/gui`, built on iced.)
 
 Zero external dependencies for the core crates — the OCaml core only uses
 `base`, and none of it needs anything beyond std.
@@ -76,7 +76,9 @@ Zero external dependencies for the core crates — the OCaml core only uses
 
 Status: the core port is complete. `crates/{absolute,relative,fretboard}`
 exist with the full module set and test suites; the differential check
-(phase 5) passes byte-for-byte. What remains is the GUI experimentation.
+(phase 5) passes byte-for-byte. The GUI is built on iced in `crates/gui`,
+implementing the feature set below (`docs/gui-spikes.md` records the
+checklist it was built against).
 
 1. Workspace scaffold: `crates/{absolute,relative,fretboard}`, empty modules,
    `cargo test` green. (Done; the Rust toolchain is already in `devenv.nix`

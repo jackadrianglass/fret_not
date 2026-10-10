@@ -24,7 +24,7 @@ const BLOOM_FRET_STAGGER_MS: u64 = 18;
 
 fn main() -> iced::Result {
     iced::application(FretNot::new, update, view)
-        .title("fret_not — iced spike")
+        .title("fret_not")
         .theme(theme)
         .window(iced::window::Settings {
             size: iced::Size::new(1400.0, 900.0),
@@ -335,7 +335,7 @@ fn view(state: &FretNot) -> Element<'_, Message> {
 
     let controls = container(
         row![
-            text("fret_not — iced spike").color(ACCENT),
+            text("fret_not").color(ACCENT),
             pick_list(
                 model::tonic_list()
                     .iter()

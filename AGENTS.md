@@ -20,12 +20,13 @@ The primary boundaries are
       against a key into absolute notes.
 - Fretboard layer (`crates/fretboard/src`) maps those onto concrete string/fret positions
   for a given instrument, including finding every playable fingering of a chunk.
-- The GUI layer is not built yet. `docs/rust-migration-plan.md` records the feature set of
-  the previous (removed) OCaml/raylib GUI so the Rust toolkit experiments can aim at it.
+- The GUI layer (`crates/gui/src`, iced 0.14) reimplements the previous (removed)
+  OCaml/raylib GUI's feature set; `docs/gui-spikes.md` records the checklist it was
+  built against and `docs/rust-migration-plan.md` the feature capture.
 
 Dependencies only point downward, enforced by the cargo workspace layout: `relative`
 depends on `absolute`, `fretboard` depends on both, and nothing below imports upward.
-Future GUI crates sit beside `fretboard` and may import everything.
+The GUI crate sits beside `fretboard` and may import everything.
 
 ## Toolchain
 
@@ -158,6 +159,16 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            tunings. The OCaml counterpart it was diffed against is gone
                            with the OCaml tree; keep this as the regression corpus for
                            future refactors and re-baseline it deliberately.
+
+crates/gui/src/            where you SEE it — the iced 0.14 GUI
+  main.rs                  app wiring: State/Message/update/view — control bar, chunk strip,
+                           solver row, tab; all four animations tick via a time::every(16ms)
+                           subscription driving `now` through state
+  model.rs                 view-state glue only: tonic list, board assembly over
+                           degrees_in_window, solver wiring, tab lines — music knowledge
+                           stays in the core crates
+  fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; visual factors
+                           are pre-interpolated by the view, the canvas only paints
 ```
 
 ## Data flow

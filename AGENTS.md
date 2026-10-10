@@ -20,9 +20,9 @@ The primary boundaries are
       against a key into absolute notes.
 - Fretboard layer (`crates/fretboard/src`) maps those onto concrete string/fret positions
   for a given instrument, including finding every playable fingering of a chunk.
-- The GUI layer (`crates/gui/src`, iced 0.14) reimplements the previous (removed)
-  OCaml/raylib GUI's feature set; `docs/gui-spikes.md` records the checklist it was
-  built against and `docs/rust-migration-plan.md` the feature capture.
+- The GUI layer (`crates/gui/src`, iced 0.14) implements the app's feature
+  set; `docs/gui-spikes.md` records the checklist it was
+  built against and `docs/gui-feature-capture.md` the feature capture.
 
 Dependencies only point downward, enforced by the cargo workspace layout: `relative`
 depends on `absolute`, `fretboard` depends on both, and nothing below imports upward.
@@ -160,9 +160,8 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            Fretboard::positions_of_semitone. Lives here, not beside
                            Chunk: it maps chunks onto the instrument.
   bin/dump_fixtures.rs     prints canonical solver/shape/window fixtures across keys and
-                           tunings. The OCaml counterpart it was diffed against is gone
-                           with the OCaml tree; keep this as the regression corpus for
-                           future refactors and re-baseline it deliberately.
+                           tunings; the regression corpus for future refactors —
+                           re-baseline it deliberately.
 
 crates/gui/src/            where you SEE it — the iced 0.14 GUI
   main.rs                  app wiring: State/Message/update/view — control bar, chunk strip,
@@ -180,13 +179,14 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI
 
 ## Data flow
 
-Chunk path (library code, no UI yet): `chunk::apply_progression` (harmonic
-resolution per chord) → `chunk_solver::positions` (every fingering, sorted by
-distance) → whoever calls it (no GUI yet; todo: pick-and-practice flow).
+Chunk path: `chunk::apply_progression` (harmonic resolution per chord) →
+`chunk_solver::positions` (every fingering, sorted by distance) → the GUI's
+pick-and-practice flow (`model::solve`, prev/next over the ranked fingerings).
 
-The previous GUI's per-frame flow (recorded in `docs/rust-migration-plan.md`):
-state indices → key/mode → `fretboard::degrees_in_window` / `shape::positions`
-(concrete positions, clamped to the instrument) → tab + fretboard rendering.
+GUI flow: tonic/quality → key/mode → `model::board` over
+`fretboard::degrees_in_window` / `degree_at` (concrete positions, clamped to
+the instrument) — computed in update on key or label-mode change; the frame
+tick only interpolates → tab + fretboard rendering.
 
 ## Conventions that will bite you if ignored
 

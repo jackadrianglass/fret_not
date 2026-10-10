@@ -1,7 +1,8 @@
 # GUI spike record
 
-Goal: rebuild the previous GUI's fretboard view against a checklist that
-stages up from boot to animation, and use it to pick the toolkit. The
+Goal: build the fretboard view from the feature capture
+(`docs/gui-feature-capture.md`) against a checklist that stages up from boot
+to animation, and use it to pick the toolkit. The
 outcome: **iced**, and the winning spike was promoted to the real GUI,
 `crates/gui` (bin `fret_not`). Toolkit gotchas live in `notes/iced.md`.
 
@@ -18,8 +19,8 @@ backend) noted.
 
 ### Stage 1 — static fretboard
 
-The core visual, rebuilt from the previous GUI's feature capture in
-`docs/rust-migration-plan.md`:
+The core visual, from the feature capture in
+`docs/gui-feature-capture.md`:
 
 - One horizontal line per string, light vertical line per fret, fret
   numbers below the lowest string. Fret count comes from `Instrument`,

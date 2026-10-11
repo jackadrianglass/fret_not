@@ -91,6 +91,25 @@ discipline and hold across versions.
   only while something is actually animating; canvas can schedule redraws
   without messages via `Action::request_redraw_at` (see notes/iced.md).
 
+## Iterating on visuals with the human in the loop
+
+- The human runs the app (`cargo run` is deliberately not allowlisted) and
+  the agent cannot see it; every visual judgment comes through them.
+- Confirm build freshness before iterating on appearance: temporarily put
+  a version marker in the window title, have the human restart the app,
+  and have them confirm the marker. A stale window makes every round
+  after it worthless — the fix is one line, don't skip it.
+- Attached screenshots pass through a vision-describer pipeline whose
+  transcriptions can be unreliable; treat them as hints, not ground
+  truth. Never tune colors or sizes against a guessed rendering.
+- When a visual is wrong, don't tune blind: ask targeted per-element
+  yes/no questions ("can you read the white labels on the orange dots?
+  the fret numbers?"). A pattern of answers points at a specific fix;
+  "still looks off" does not.
+- One root-cause fix beats a restyle chain: if two attempts at the same
+  region change nothing visible, stop restyling and question the
+  delivery (stale build) or the structure (text painted on fill) instead.
+
 ## Something misbehaves or crashes
 
 - Total functions at boundaries: anything `head`-shaped on possibly-empty

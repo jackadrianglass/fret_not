@@ -45,9 +45,11 @@ available to you.
 cargo test --workspace    # the test suite (all tests inline per module)
 cargo fmt                 # rustfmt; run before calling something done
 cargo build --workspace   # build
+cargo clippy --workspace  # stricter lint pass
 ```
 
-Building, checking, formatting, and testing are allowlisted — run them freely.
+Building, checking, formatting, testing, and linting are allowlisted — run
+them freely.
 `cargo run` is deliberately NOT allowlisted: ask the human to run the
 application and give feedback whenever you have something working. Keep them
 actively involved in the process. UI work especially goes through them —
@@ -112,7 +114,7 @@ crates/relative/src/       what the degree IS — degree-relative music, no fret
                            Slot::Rest | Slot(DegreeReference) (slot presence IS the
                            rhythm; all slots equal duration — deliberate
                            simplification); Chunk is a newtype over Vec<Slot>
-                           (Deref to the slice; push/remove as module functions);
+                           (Deref to the slice; push/remove/set as module functions);
                            reframe() rotates degrees mod 7 with octave carry — this is
                            what makes chunks transposable; apply_progression() repeats
                            a chunk per chord root (e.g. [1, 4, 5])
@@ -163,18 +165,43 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            tunings; the regression corpus for future refactors —
                            re-baseline it deliberately.
 
-crates/gui/src/            where you SEE it — the iced 0.14 GUI
-  main.rs                  app wiring: State/Message/update/view — control bar, chunk strip,
-                           solver row, tab; the board (positions + labels) is computed
-                           in update on key/label-mode change and the view only
-                           interpolates; all four animations tick via a time::every(16ms)
-                           subscription driving `now` through state
+crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout prototype)
+  main.rs                  the shell: App = Session (instrument/tonic/quality/label
+                           mode) + Document (chunks + sequence steps, owned here and
+                           shared by every screen) + Playback + theme; persistent
+                           chrome (top bar with nav/config/playback groups, collapsible
+                           chunk-library rail); screen views are routed in via .map
+                           and report mutations back as a bool that triggers
+                           screens.refresh
+  board.rs                 the shared fretboard component: BoardState (in-key dots,
+                           recomputed on session change in update) + Highlight (played
+                           positions + one optional ringed position); emits
+                           board::Event — each screen maps it into its own Message
+  colors.rs                palette-driven custom colors: every chrome/board shade is
+                           derived from the iced Theme palette at render time, inside
+                           widget style closures and the canvas draw call — theme
+                           switching only reassigns state.theme, no refresh anywhere
+  screens/                 one module per feature view, each with a private Message;
+                           fingerings are cached in update and go stale on any
+                           document/session change, which the shell fixes by calling
+                           Screens::refresh
+    edit.rs                slot band (degree + resolved note name per cell) centered
+                           over the fingering board; board clicks write degrees into
+                           the selected slot, off-key clicks clear it to a rest
+    tab.rs                  tab lines primary; chord/fingering steppers above, compact
+                           board below; clicking a board dot jumps to a fingering
+                           that plays it
+    sequence.rs            step-card timeline (root roman + chunk letter + degree
+                           glyphs, horizontally scrollable); the board follows the
+                           selected step
   model.rs                 view-state glue only: TONICS const + typed pick_list
-                           payloads, board assembly over degrees_in_window, solver
-                           wiring, tab lines — music knowledge stays in the core
-                           crates
-  fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; visual factors
-                           are pre-interpolated by the view, the canvas only paints
+                           payloads, board assembly over degrees_in_window, solve
+                           wiring, seed chunks/steps, chunk letters, romans —
+                           music knowledge stays in the core crates
+  fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; paints
+                           from theme-derived CanvasColors, no state, no animation —
+                           fret N's dot centers between the N-1 and N wires (where
+                           the finger presses), fret 0 sits left of the nut
 ```
 
 ## Data flow
@@ -185,8 +212,12 @@ pick-and-practice flow (`model::solve`, prev/next over the ranked fingerings).
 
 GUI flow: tonic/quality → key/mode → `model::board` over
 `fretboard::degrees_in_window` / `degree_at` (concrete positions, clamped to
-the instrument) — computed in update on key or label-mode change; the frame
-tick only interpolates → tab + fretboard rendering.
+the instrument) — computed in update on session change and cached in
+BoardState; each screen caches its solved fingerings and the shell calls
+Screens::refresh after any document/session mutation → tab + fretboard
+rendering. The fretboard is a shared component docked at the bottom of every
+screen: the full in-key field drawn as a quiet labeled backdrop, the played
+positions emphasized on top of it.
 
 ## Conventions that will bite you if ignored
 
@@ -209,6 +240,8 @@ House style:
   layer that owns the data instead.
 - Run `cargo fmt` before calling something done. Warnings aren't noise; if it
   doesn't build clean, it isn't done.
+- `cargo fmt` reflows files: after running it, re-read any file before
+  editing it again — a stale read makes the next `edit` old_string miss.
 - `Option` for genuinely-absent results; `panic!` only for invariant violations,
   with the invariant documented on the function that panics.
 - Small value types are `Copy` (PitchClass, Letter, Alteration, SpelledPitch,

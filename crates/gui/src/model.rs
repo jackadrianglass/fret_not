@@ -59,14 +59,22 @@ pub enum LabelMode {
 
 pub struct Dot {
     pub position: FretboardPosition,
-    pub degree: DegreeReference,
     pub label: String,
     pub is_root: bool,
 }
 
 pub fn degree_label(dr: DegreeReference) -> String {
-    let apostrophes = "'".repeat(dr.octave.clamp(0, 4) as usize);
-    format!("{}{}", dr.scale_degree.label(), apostrophes)
+    dr.scale_degree.label().to_string()
+}
+
+pub const ROMANS: [&str; 7] = ["I", "II", "III", "IV", "V", "VI", "VII"];
+
+pub fn roman(root: i32) -> &'static str {
+    ROMANS[(root - 1).rem_euclid(7) as usize]
+}
+
+pub fn chunk_name(index: usize) -> String {
+    char::from(b'A' + (index % 26) as u8).to_string()
 }
 
 fn label_of(label_mode: LabelMode, key: Key, mode: Mode, dr: DegreeReference) -> String {
@@ -76,9 +84,8 @@ fn label_of(label_mode: LabelMode, key: Key, mode: Mode, dr: DegreeReference) ->
     }
 }
 
-// Every playable position, split into in-key dots (with degree and label) and
-// off-key positions. Order is fixed — string, then fret — and the main view
-// zips animation state against it by index.
+// Every playable position, split into in-key dots (labeled) and off-key
+// positions. Order is fixed — string, then fret.
 pub fn board(
     instrument: &Instrument,
     key: Key,
@@ -91,7 +98,6 @@ pub fn board(
             position,
             label: label_of(label_mode, key, mode, degree),
             is_root: degree.scale_degree.degree == 1,
-            degree,
         })
         .collect();
 
@@ -117,6 +123,13 @@ pub fn initial_chunk() -> Chunk {
         )),
         Slot::Note(DegreeReference::natural(5, 0)),
         Slot::Note(DegreeReference::natural(6, 0)),
+    ])
+}
+
+pub fn second_chunk() -> Chunk {
+    Chunk::new(vec![
+        Slot::Note(DegreeReference::natural(1, 0)),
+        Slot::Note(DegreeReference::natural(5, 0)),
     ])
 }
 

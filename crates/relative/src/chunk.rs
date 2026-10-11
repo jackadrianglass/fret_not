@@ -36,6 +36,10 @@ pub fn remove(chunk: &mut Chunk, index: usize) -> Slot {
     chunk.0.remove(index)
 }
 
+pub fn set(chunk: &mut Chunk, index: usize, slot: Slot) -> Slot {
+    std::mem::replace(&mut chunk.0[index], slot)
+}
+
 fn reframe_degree_reference(dr: DegreeReference, root_degree: i32) -> DegreeReference {
     let raw_degree = dr.scale_degree.degree - 1 + (root_degree - 1);
     DegreeReference {
@@ -68,7 +72,7 @@ pub fn apply_progression(chunk: &Chunk, root_degrees: &[i32]) -> Vec<Chunk> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, Slot, apply_progression, push, reframe, remove};
+    use super::{Chunk, Slot, apply_progression, push, reframe, remove, set};
     use crate::degree_reference::DegreeReference;
     use crate::scale_degree::ScaleDegree;
     use absolute::alteration::Alteration;
@@ -198,5 +202,16 @@ mod tests {
             matches!(removed, Slot::Note(dr) if dr.scale_degree.degree == 1),
             "remove returns the slot at the index"
         );
+    }
+
+    #[test]
+    fn set_replaces_the_slot_in_place() {
+        let mut chunk = Chunk::new(vec![bare_note(1), Slot::Rest]);
+        let replaced = set(&mut chunk, 0, Slot::Rest);
+        assert!(
+            matches!(replaced, Slot::Note(dr) if dr.scale_degree.degree == 1),
+            "set returns the slot it replaced"
+        );
+        assert_eq!(chunk.len(), 2, "set keeps the slot count");
     }
 }

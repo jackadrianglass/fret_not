@@ -1,30 +1,23 @@
-use std::time::{Duration, Instant};
-
+mod board;
+mod colors;
 mod fretboard_canvas;
 mod model;
+mod screens;
 
-use iced::animation::{Animation, Easing};
-use iced::widget::{button, canvas, column, container, pick_list, row, text, toggler};
-use iced::{Border, Color, Element, Fill, Font};
+use iced::widget::{Stack, button, column, container, pick_list, row, space, text, toggler};
+use iced::{Border, Element, Fill};
 
 use absolute::spelled_pitch::SpelledPitch;
-use fretboard::fretboard::degree_at;
-use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
-use fretboard::tuning;
-use relative::chunk::{self, Chunk, Slot};
+use relative::chunk::{Chunk, Slot};
 use relative::key::Quality;
-use relative::scale_degree::ScaleDegree;
 
-use crate::fretboard_canvas::{ACCENT, FretboardCanvas, Visual};
+use crate::board::BoardState;
 use crate::model::LabelMode;
-
-const SLOT_MS: f32 = 500.0;
-const BLOOM_MS: u64 = 250;
-const BLOOM_FRET_STAGGER_MS: u64 = 18;
+use crate::screens::{ScreenKind, Screens, edit, sequence, tab};
 
 fn main() -> iced::Result {
-    iced::application(FretNot::new, update, view)
+    iced::application(App::new, update, view)
         .title("fret_not")
         .theme(theme)
         .window(iced::window::Settings {
@@ -33,7 +26,6 @@ fn main() -> iced::Result {
             resizable: true,
             ..iced::window::Settings::default()
         })
-        .subscription(subscription)
         .run()
 }
 
@@ -42,436 +34,407 @@ enum Message {
     TonicPicked(SpelledPitch),
     QualityPicked(Quality),
     NotesToggled(bool),
-    SweepToggled(bool),
-    Tick(Instant),
-    Hovered(Option<FretboardPosition>),
-    Clicked(FretboardPosition),
-    SlotSelected(usize),
-    AddSlot,
-    RemoveSlot,
-    FingeringPrev,
-    FingeringNext,
-    ChordPrev,
-    ChordNext,
+    ScreenChanged(ScreenKind),
+    ChunkSelected(usize),
+    ChunkAdded,
+    RailToggled,
     PlayToggled,
+    ThemePicked(iced::Theme),
+    Edit(edit::Message),
+    Tab(tab::Message),
+    Sequence(sequence::Message),
 }
 
-struct FretNot {
-    instrument: Instrument,
-    tonic: SpelledPitch,
-    quality: Quality,
-    notes_mode: bool,
-    sweep: bool,
-    selected: Option<ScaleDegree>,
-    hover: Option<FretboardPosition>,
-    hover_anim: Animation<bool>,
-    bloom: Vec<Animation<bool>>,
-    board: (Vec<model::Dot>, Vec<FretboardPosition>),
-    chunk: Chunk,
-    slot: usize,
-    chord_index: usize,
-    fingering_index: usize,
-    solved: Vec<Vec<FretboardPosition>>,
-    slot_notes: Vec<Option<usize>>,
-    play_start: Option<Instant>,
-    now: Instant,
+pub struct Session {
+    pub instrument: Instrument,
+    pub tonic: SpelledPitch,
+    pub quality: Quality,
+    pub label_mode: LabelMode,
 }
 
-impl FretNot {
-    fn new() -> FretNot {
-        let mut state = FretNot {
-            instrument: model::instrument(),
-            tonic: model::TONICS[0],
-            quality: Quality::Major,
-            notes_mode: false,
-            sweep: false,
-            selected: None,
-            hover: None,
-            hover_anim: Animation::new(false).quick().easing(Easing::EaseOutQuad),
-            bloom: Vec::new(),
-            board: (Vec::new(), Vec::new()),
-            chunk: model::initial_chunk(),
-            slot: 0,
-            chord_index: 0,
-            fingering_index: 0,
-            solved: Vec::new(),
-            slot_notes: Vec::new(),
-            play_start: None,
-            now: Instant::now(),
-        };
-        state.resolve_fingerings();
-        state.refresh_board();
-        state.rebuild_bloom();
-        state
-    }
-
-    fn key(&self) -> relative::key::Key {
+impl Session {
+    pub fn key(&self) -> relative::key::Key {
         model::key_of(self.tonic, self.quality)
     }
 
-    fn mode(&self) -> relative::mode::Mode {
+    pub fn mode(&self) -> relative::mode::Mode {
         model::mode_of(self.quality)
     }
+}
 
-    fn label_mode(&self) -> LabelMode {
-        if self.notes_mode {
-            LabelMode::Notes
-        } else {
-            LabelMode::Degrees
-        }
-    }
+pub struct Document {
+    pub chunks: Vec<Chunk>,
+    pub selected_chunk: usize,
+    pub steps: Vec<Step>,
+}
 
-    fn resolve_fingerings(&mut self) {
-        let (solved, slot_notes) = model::solve(
-            &self.instrument,
-            self.key(),
-            self.mode(),
-            &self.chunk,
-            model::PROGRESSION[self.chord_index],
+pub struct Step {
+    pub chunk: usize,
+    pub root: i32,
+}
+
+pub struct Playback {
+    pub playing: bool,
+    pub tempo: u16,
+}
+
+struct App {
+    session: Session,
+    document: Document,
+    playback: Playback,
+    board: BoardState,
+    screens: Screens,
+    active: ScreenKind,
+    rail_open: bool,
+    theme: iced::Theme,
+}
+
+impl App {
+    fn new() -> App {
+        let session = Session {
+            instrument: model::instrument(),
+            tonic: model::TONICS[0],
+            quality: Quality::Major,
+            label_mode: LabelMode::Degrees,
+        };
+        let document = Document {
+            chunks: vec![model::initial_chunk(), model::second_chunk()],
+            selected_chunk: 0,
+            steps: vec![
+                Step { chunk: 0, root: 1 },
+                Step { chunk: 0, root: 4 },
+                Step { chunk: 0, root: 5 },
+                Step { chunk: 1, root: 1 },
+                Step { chunk: 0, root: 1 },
+            ],
+        };
+        let board = BoardState::new(
+            &session.instrument,
+            session.key(),
+            session.mode(),
+            session.label_mode,
         );
-        self.solved = solved;
-        self.slot_notes = slot_notes;
-        self.fingering_index = 0;
-        if self.slot >= self.chunk.len() {
-            self.slot = self.chunk.len().saturating_sub(1);
-        }
+        let mut app = App {
+            session,
+            document,
+            playback: Playback {
+                playing: false,
+                tempo: 120,
+            },
+            board,
+            screens: Screens::new(),
+            rail_open: true,
+            theme: iced::Theme::KanagawaWave,
+            active: ScreenKind::Edit,
+        };
+        app.screens.refresh(&app.session, &app.document);
+        app
     }
 
-    // The board depends only on the key and label mode, so it is recomputed
-    // when those change; the frame loop only interpolates.
-    fn refresh_board(&mut self) {
-        self.board = model::board(&self.instrument, self.key(), self.mode(), self.label_mode());
+    // The board and the screens' caches are derived from the session; both
+    // are recomputed when it changes.
+    fn refresh_session(&mut self) {
+        self.board = BoardState::new(
+            &self.session.instrument,
+            self.session.key(),
+            self.session.mode(),
+            self.session.label_mode,
+        );
+        self.screens.refresh(&self.session, &self.document);
     }
 
-    // One animation per visual, in the exact order the view zips against them:
-    // in-key dots, then off-key positions.
-    fn rebuild_bloom(&mut self) {
-        let (dots, off_key) = &self.board;
-        let now = self.now;
-        self.bloom = dots
-            .iter()
-            .map(|d| d.position.fret)
-            .chain(off_key.iter().map(|p| p.fret))
-            .map(|fret| {
-                Animation::new(false)
-                    .duration(Duration::from_millis(BLOOM_MS))
-                    .delay(Duration::from_millis(
-                        fret.max(0) as u64 * BLOOM_FRET_STAGGER_MS,
-                    ))
-                    .easing(Easing::EaseOutCubic)
-                    .go(true, now)
-            })
-            .collect();
-    }
-
-    fn pulse(&self) -> Option<(usize, f32)> {
-        let start = self.play_start?;
-        if self.chunk.is_empty() {
-            return None;
-        }
-        let elapsed = self.now.duration_since(start).as_secs_f32() * 1000.0 / SLOT_MS;
-        let slot = (elapsed.floor() as usize) % self.chunk.len();
-        let frac = elapsed.fract();
-        let factor = 1.0 + 0.3 * (1.0 - frac).powi(2);
-        Some((slot, factor))
-    }
-
-    fn pulse_position(&self, pulse_slot: Option<usize>) -> Option<FretboardPosition> {
-        let note_index = self.slot_notes.get(pulse_slot?).and_then(|note| *note)?;
-        self.solved
-            .get(self.fingering_index)?
-            .get(note_index)
-            .copied()
+    fn refresh_document(&mut self) {
+        self.screens.refresh(&self.session, &self.document);
     }
 }
 
-fn theme(_state: &FretNot) -> iced::Theme {
-    iced::Theme::Dracula
+fn theme(state: &App) -> iced::Theme {
+    state.theme.clone()
 }
 
-fn subscription(_state: &FretNot) -> iced::Subscription<Message> {
-    iced::time::every(Duration::from_millis(16)).map(Message::Tick)
-}
-
-fn update(state: &mut FretNot, message: Message) {
+fn update(state: &mut App, message: Message) {
     match message {
-        Message::Tick(now) => state.now = now,
         Message::TonicPicked(tonic) => {
-            if tonic != state.tonic {
-                state.tonic = tonic;
-                state.resolve_fingerings();
-                state.refresh_board();
-                state.rebuild_bloom();
+            if tonic != state.session.tonic {
+                state.session.tonic = tonic;
+                state.refresh_session();
             }
         }
         Message::QualityPicked(quality) => {
-            if quality != state.quality {
-                state.quality = quality;
-                state.resolve_fingerings();
-                state.refresh_board();
-                state.rebuild_bloom();
+            if quality != state.session.quality {
+                state.session.quality = quality;
+                state.refresh_session();
             }
         }
         Message::NotesToggled(enabled) => {
-            state.notes_mode = enabled;
-            state.refresh_board();
-        }
-        Message::SweepToggled(enabled) => state.sweep = enabled,
-        Message::Hovered(hover) => {
-            if state.hover != hover {
-                state.hover = hover;
-                state.hover_anim.go_mut(hover.is_some(), state.now);
-            }
-        }
-        Message::Clicked(position) => {
-            state.selected = degree_at(&state.instrument, state.key(), state.mode(), position)
-                .map(|dr| dr.scale_degree);
-        }
-        Message::SlotSelected(index) => {
-            if !state.chunk.is_empty() {
-                state.slot = index.min(state.chunk.len() - 1);
-            }
-        }
-        Message::AddSlot => {
-            if state.chunk.len() < model::MAX_SLOTS {
-                chunk::push(&mut state.chunk, Slot::Rest);
-                state.resolve_fingerings();
-            }
-        }
-        Message::RemoveSlot => {
-            if !state.chunk.is_empty() {
-                chunk::remove(&mut state.chunk, state.slot);
-                state.slot = state.slot.saturating_sub(1);
-                state.resolve_fingerings();
-            }
-        }
-        Message::FingeringPrev => {
-            let len = state.solved.len();
-            if len > 0 {
-                state.fingering_index = (state.fingering_index + len - 1) % len;
-            }
-        }
-        Message::FingeringNext => {
-            let len = state.solved.len();
-            if len > 0 {
-                state.fingering_index = (state.fingering_index + 1) % len;
-            }
-        }
-        Message::ChordPrev => {
-            state.chord_index =
-                (state.chord_index + model::PROGRESSION.len() - 1) % model::PROGRESSION.len();
-            state.resolve_fingerings();
-        }
-        Message::ChordNext => {
-            state.chord_index = (state.chord_index + 1) % model::PROGRESSION.len();
-            state.resolve_fingerings();
-        }
-        Message::PlayToggled => {
-            state.play_start = match state.play_start {
-                Some(_) => None,
-                None => Some(state.now),
+            let label_mode = if enabled {
+                LabelMode::Notes
+            } else {
+                LabelMode::Degrees
             };
+            if label_mode != state.session.label_mode {
+                state.session.label_mode = label_mode;
+                state.refresh_session();
+            }
+        }
+        Message::ScreenChanged(kind) => state.active = kind,
+        Message::ChunkSelected(index) => {
+            if index < state.document.chunks.len() && index != state.document.selected_chunk {
+                state.document.selected_chunk = index;
+                state.refresh_document();
+            }
+        }
+        Message::ChunkAdded => {
+            state.document.chunks.push(Chunk::new(vec![Slot::Rest]));
+            state.document.selected_chunk = state.document.chunks.len() - 1;
+            state.refresh_document();
+        }
+        Message::RailToggled => state.rail_open = !state.rail_open,
+        Message::PlayToggled => state.playback.playing = !state.playback.playing,
+        // Every derived color reads the theme at render time, so switching
+        // needs no refresh of the board or the screens' caches.
+        Message::ThemePicked(theme) => state.theme = theme,
+        Message::Edit(message) => {
+            if state
+                .screens
+                .edit
+                .update(message, &state.session, &mut state.document)
+            {
+                state.refresh_document();
+            }
+        }
+        Message::Tab(message) => {
+            if state.screens.tab.update(message) {
+                state.refresh_document();
+            }
+        }
+        Message::Sequence(message) => {
+            if state.screens.sequence.update(message, &state.document) {
+                state.refresh_document();
+            }
         }
     }
 }
 
-fn bloom_factor(state: &FretNot, index: usize, now: Instant) -> f32 {
-    state
-        .bloom
-        .get(index)
-        .map(|animation| animation.interpolate(0.0, 1.0, now))
-        .unwrap_or(1.0)
+fn chrome(theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(colors::chrome_background(theme).into()),
+        ..container::Style::default()
+    }
 }
 
-fn sweep_wave(now: Instant, fret: i32) -> f32 {
-    let t = now.elapsed().as_secs_f32();
-    let phase = std::f32::consts::TAU * (t / 1.2) - fret as f32 * 0.35;
-    0.4 + 0.6 * (0.5 + 0.5 * phase.sin())
+fn group(theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(colors::group_background(theme).into()),
+        border: Border {
+            radius: 6.0.into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    }
 }
 
-fn view(state: &FretNot) -> Element<'_, Message> {
-    let now = state.now;
-    let (dots, off_key) = &state.board;
+fn divider(theme: &iced::Theme) -> iced::widget::rule::Style {
+    iced::widget::rule::Style {
+        color: colors::divider_color(theme),
+        radius: Default::default(),
+        fill_mode: iced::widget::rule::FillMode::Full,
+        snap: true,
+    }
+}
 
-    let hover_scale = state.hover_anim.interpolate(1.0, 1.35, now);
-    let pulse = state.pulse();
-    let pulse_position = state.pulse_position(pulse.map(|(slot, _)| slot));
+pub fn outlined(selected: bool) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |theme, _status| button::Style {
+        border: if selected {
+            Border {
+                radius: 4.0.into(),
+                width: 2.0,
+                color: colors::accent(theme),
+            }
+        } else {
+            Border::default()
+        },
+        text_color: if selected {
+            colors::accent(theme)
+        } else {
+            colors::text(theme)
+        },
+        ..button::Style::default()
+    }
+}
 
-    let scale_of = |position: FretboardPosition| {
-        let mut scale = 1.0;
-        if state.hover == Some(position) {
-            scale *= hover_scale;
-        }
-        if pulse_position == Some(position) {
-            scale *= pulse.map(|(_, factor)| factor).unwrap_or(1.0);
-        }
-        scale
+fn view(state: &App) -> Element<'_, Message> {
+    let screen = match state.active {
+        ScreenKind::Edit => edit::view(
+            &state.screens.edit,
+            &state.session,
+            &state.document,
+            &state.board,
+        )
+        .map(Message::Edit),
+        ScreenKind::Tab => tab::view(
+            &state.screens.tab,
+            &state.session,
+            &state.document,
+            &state.board,
+        )
+        .map(Message::Tab),
+        ScreenKind::Sequence => sequence::view(
+            &state.screens.sequence,
+            &state.session,
+            &state.document,
+            &state.board,
+        )
+        .map(Message::Sequence),
     };
 
-    let mut visuals = Vec::with_capacity(dots.len() + off_key.len());
-    for (i, dot) in dots.iter().enumerate() {
-        visuals.push(Visual {
-            position: dot.position,
-            label: Some(dot.label.clone()),
-            in_key: true,
-            root_halo: dot.is_root,
-            selected: Some(dot.degree.scale_degree) == state.selected,
-            bloom: bloom_factor(state, i, now),
-            wave: if state.sweep {
-                sweep_wave(now, dot.position.fret)
-            } else {
-                1.0
-            },
-            scale: scale_of(dot.position),
-        });
-    }
-    for (j, position) in off_key.iter().enumerate() {
-        visuals.push(Visual {
-            position: *position,
-            label: None,
-            in_key: false,
-            root_halo: false,
-            selected: false,
-            bloom: bloom_factor(state, dots.len() + j, now),
-            wave: 1.0,
-            scale: scale_of(*position),
-        });
-    }
+    let content = container(screen).width(Fill).height(Fill).padding(12);
 
-    let controls = container(
-        row![
-            text("fret_not").color(ACCENT),
-            pick_list(
-                model::TONICS.to_vec(),
-                Some(state.tonic),
-                Message::TonicPicked,
-            ),
-            pick_list(
-                vec![Quality::Major, Quality::Minor],
-                Some(state.quality),
-                Message::QualityPicked,
-            ),
-            toggler(state.notes_mode)
-                .label("note names")
-                .on_toggle(Message::NotesToggled),
-            toggler(state.sweep)
-                .label("sweep")
-                .on_toggle(Message::SweepToggled),
-        ]
-        .spacing(12)
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(8)
-    .style(|_theme| container::Style {
-        background: Some(Color::from_rgba(0.08, 0.09, 0.13, 1.0).into()),
-        ..container::Style::default()
-    });
+    let mut body = row![].height(Fill);
+    if state.rail_open {
+        body = body
+            .push(library_rail(state))
+            .push(iced::widget::rule::vertical(1.0).style(divider));
+    }
+    body = body.push(content);
 
-    let mut strip = row![].spacing(4);
-    for (i, slot) in state.chunk.iter().enumerate() {
-        let (label, dim) = match slot {
-            Slot::Note(dr) => (model::degree_label(*dr), false),
-            Slot::Rest => (".".to_string(), true),
-        };
-        let is_current = pulse.map(|(pulse_slot, _)| pulse_slot) == Some(i);
-        let is_selected = i == state.slot;
-        let color = if is_current {
-            ACCENT
-        } else if dim {
-            Color::from_rgba8(0x88, 0x88, 0x88, 1.0)
-        } else {
-            Color::WHITE
-        };
-        strip = strip.push(
-            button(text(label).font(Font::MONOSPACE).color(color))
-                .on_press(Message::SlotSelected(i))
-                .style(move |_theme, _status| button::Style {
-                    border: if is_selected {
-                        Border {
-                            radius: 4.0.into(),
-                            width: 2.0,
-                            color: ACCENT,
-                        }
+    column![
+        top_bar(state),
+        iced::widget::rule::horizontal(1.0).style(divider),
+        body,
+    ]
+    .into()
+}
+
+fn top_bar(state: &App) -> Element<'_, Message> {
+    let mut nav = row![].spacing(4);
+    nav = nav.push(button(if state.rail_open { "«" } else { "»" }).on_press(Message::RailToggled));
+    for kind in [ScreenKind::Edit, ScreenKind::Tab, ScreenKind::Sequence] {
+        let active = state.active == kind;
+        nav = nav.push(
+            button(text(kind.label()))
+                .on_press(Message::ScreenChanged(kind))
+                .style(move |theme, _status| button::Style {
+                    background: if active {
+                        Some(colors::group_background(theme).into())
                     } else {
-                        Border::default()
+                        None
+                    },
+                    text_color: if active {
+                        colors::accent(theme)
+                    } else {
+                        colors::text(theme)
                     },
                     ..button::Style::default()
                 }),
         );
     }
-    let editor = row![
-        strip,
-        button("+").on_press(Message::AddSlot),
-        button("-").on_press(Message::RemoveSlot),
-    ]
-    .spacing(6)
-    .align_y(iced::Alignment::Center);
 
-    let fingering = state
-        .solved
-        .get(state.fingering_index)
-        .cloned()
-        .unwrap_or_default();
-    let lines: Vec<String> = (0..state.instrument.string_count())
-        .map(|string_index| {
-            let mut line = format!(
-                "{:>3}|",
-                tuning::open_note(&state.instrument.tuning, string_index).to_string()
-            );
-            for (i, _slot) in state.chunk.iter().enumerate() {
-                let played = state
-                    .slot_notes
-                    .get(i)
-                    .and_then(|note| *note)
-                    .and_then(|note_index| fingering.get(note_index))
-                    .filter(|p| p.string_index == string_index);
-                line += &match played {
-                    Some(position) => format!("{:>4}", position.fret),
-                    None => "   -".to_string(),
-                };
-            }
-            line
-        })
-        .collect();
-
-    let solver = row![
-        button("prev").on_press(Message::FingeringPrev),
-        button("next").on_press(Message::FingeringNext),
-        text(format!(
-            "fingering {}/{}",
-            state.fingering_index + 1,
-            state.solved.len()
-        )),
-        button("< chord").on_press(Message::ChordPrev),
-        text(model::PROGRESSION_LABELS[state.chord_index]),
-        button("chord >").on_press(Message::ChordNext),
-        button(if state.play_start.is_some() {
-            "stop"
-        } else {
-            "play"
-        })
-        .on_press(Message::PlayToggled),
+    let config = row![
+        pick_list(
+            model::TONICS.to_vec(),
+            Some(state.session.tonic),
+            Message::TonicPicked,
+        ),
+        pick_list(
+            vec![Quality::Major, Quality::Minor],
+            Some(state.session.quality),
+            Message::QualityPicked,
+        ),
+        toggler(matches!(state.session.label_mode, LabelMode::Notes))
+            .label("note names")
+            .on_toggle(Message::NotesToggled),
+        text(format!("{} bpm", state.playback.tempo)),
+        pick_list(
+            iced::Theme::ALL.to_vec(),
+            Some(state.theme.clone()),
+            Message::ThemePicked,
+        ),
     ]
     .spacing(8)
     .align_y(iced::Alignment::Center);
 
-    let tab = column(
-        lines
-            .into_iter()
-            .map(|line| text(line).font(Font::MONOSPACE).size(13.0).into())
-            .collect::<Vec<Element<Message>>>(),
-    );
+    let playback = row![
+        button(if state.playback.playing { "■" } else { "▶" }).on_press(Message::PlayToggled),
+        text(state.screens.sequence.step_label(&state.document)),
+    ]
+    .spacing(8)
+    .align_y(iced::Alignment::Center);
 
-    let board = canvas(FretboardCanvas {
-        visuals,
-        string_count: state.instrument.string_count(),
-        max_fret: state.instrument.max_fret(),
-    })
-    .width(Fill)
-    .height(Fill);
+    let base = row![
+        nav,
+        space::horizontal(),
+        container(config).padding(4).style(group),
+    ]
+    .spacing(8)
+    .align_y(iced::Alignment::Center)
+    .width(Fill);
 
-    column![controls, editor, solver, tab, board]
-        .spacing(10)
-        .padding(12)
+    // Playback floats over the base layer, centered on the window — the
+    // stack's overlay sizing is what makes the centering exact rather than
+    // "midway between whatever is on either side".
+    let centered = container(container(playback).padding(4).style(group))
+        .width(Fill)
+        .height(Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center);
+
+    container(Stack::with_children(vec![base.into(), centered.into()]).width(Fill))
+        .padding(4)
+        .style(chrome)
         .into()
+}
+
+fn library_rail(state: &App) -> Element<'_, Message> {
+    let mut list = column![].spacing(4);
+    for (i, _chunk) in state.document.chunks.iter().enumerate() {
+        let selected = i == state.document.selected_chunk;
+        list = list.push(
+            button(text(model::chunk_name(i)))
+                .width(Fill)
+                .on_press(Message::ChunkSelected(i))
+                .style(outlined(selected)),
+        );
+    }
+
+    let rail = column![
+        list,
+        button("+ chunk").width(Fill).on_press(Message::ChunkAdded),
+    ]
+    .spacing(8)
+    .padding(4);
+
+    container(rail).width(160).height(Fill).style(chrome).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn switching_screens_keeps_the_document_intact() {
+        let mut app = App::new();
+        update(&mut app, Message::ScreenChanged(ScreenKind::Tab));
+        assert_eq!(app.active, ScreenKind::Tab);
+        assert_eq!(app.document.chunks.len(), 2);
+    }
+
+    #[test]
+    fn a_board_click_rewrites_the_selected_slot() {
+        let mut app = App::new();
+        let tonic_position = fretboard::fretboard_position::FretboardPosition {
+            string_index: 0,
+            fret: 0,
+        };
+        update(
+            &mut app,
+            Message::Edit(edit::Message::Board(board::Event::Clicked(tonic_position))),
+        );
+        match app.document.chunks[0][0] {
+            Slot::Note(dr) => {
+                assert_eq!(dr.scale_degree.degree, 3, "open E2 is degree 3 of C major")
+            }
+            Slot::Rest => panic!("expected the slot to hold a note"),
+        }
+    }
 }

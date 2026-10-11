@@ -1,34 +1,22 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Action};
 use iced::widget::text::Alignment;
-use iced::{Color, Point, Rectangle, Renderer, Theme};
+use iced::{Point, Rectangle, Renderer, Theme};
 
 use fretboard::fretboard_position::FretboardPosition;
 
-use crate::Message;
-
-pub const ACCENT: Color = Color::from_rgba8(0xFF, 0x8A, 0x3D, 1.0);
-const STRING: Color = Color::from_rgba8(0x99, 0x99, 0xA0, 1.0);
-const NUT: Color = Color::from_rgba8(0xCC, 0xCC, 0xD4, 1.0);
-const FRET_LINE: Color = Color::from_rgba8(0x50, 0x50, 0x5A, 1.0);
-const OFF_KEY: Color = Color::from_rgba8(0x66, 0x66, 0x70, 1.0);
-const INLAY: Color = Color::from_rgba8(0x44, 0x44, 0x4E, 1.0);
-const FRET_NUMBER: Color = Color::from_rgba8(0x88, 0x88, 0x90, 1.0);
-const LABEL: Color = Color::WHITE;
+use crate::board;
+use crate::colors::CanvasColors;
 
 const INLAY_FRETS: [i32; 7] = [3, 5, 7, 9, 12, 15, 17];
 
-// One drawn position, with every visual factor pre-interpolated by the view.
-// The canvas only paints; the clocks live in the application state.
+// One drawn position; the board component builds these, the canvas only paints.
 pub struct Visual {
     pub position: FretboardPosition,
     pub label: Option<String>,
-    pub in_key: bool,
     pub root_halo: bool,
     pub selected: bool,
-    pub bloom: f32,
-    pub wave: f32,
-    pub scale: f32,
+    pub emphasized: bool,
 }
 
 pub struct FretboardCanvas {
@@ -47,10 +35,12 @@ struct Geometry {
 
 impl Geometry {
     fn new(bounds: Rectangle, string_count: usize, max_fret: i32) -> Geometry {
-        let pad_x = 24.0;
+        // The left pad hosts the open-string dots, which sit left of the nut.
+        let pad_x = 48.0;
+        let pad_right = 24.0;
         let pad_top = 20.0;
         let pad_bottom = 30.0;
-        let fret_width = (bounds.width - 2.0 * pad_x) / (max_fret as f32 + 1.0);
+        let fret_width = (bounds.width - pad_x - pad_right) / (max_fret as f32 + 1.0);
         let string_gap = if string_count > 1 {
             (bounds.height - pad_top - pad_bottom) / (string_count - 1) as f32
         } else {
@@ -61,7 +51,7 @@ impl Geometry {
             top: pad_top,
             fret_width,
             string_gap,
-            dot_radius: (fret_width * 0.16).clamp(5.0, 11.0),
+            dot_radius: (fret_width * 0.22).clamp(7.0, 14.0),
         }
     }
 
@@ -69,8 +59,16 @@ impl Geometry {
         self.left + fret as f32 * self.fret_width
     }
 
+    // The open string lives just left of the nut, the way it does past the
+    // nut on a real instrument. A fretted note at fret N sounds between the
+    // N-1 and N wires — that is the space the finger presses in — so its
+    // dot centers between those wires, not the pair to the right.
     fn center_x(&self, fret: i32) -> f32 {
-        self.fret_x(fret) + self.fret_width * 0.5
+        if fret == 0 {
+            self.fret_x(0) - self.dot_radius - 4.0
+        } else {
+            self.fret_x(fret) - self.fret_width * 0.5
+        }
     }
 
     fn string_y(&self, string_index: usize) -> f32 {
@@ -82,19 +80,6 @@ impl Geometry {
             self.center_x(position.fret),
             self.string_y(position.string_index),
         )
-    }
-}
-
-fn with_alpha(color: Color, alpha: f32) -> Color {
-    Color { a: alpha, ..color }
-}
-
-fn dimmed(color: Color, factor: f32) -> Color {
-    Color {
-        r: color.r * factor,
-        g: color.g * factor,
-        b: color.b * factor,
-        a: color.a,
     }
 }
 
@@ -119,7 +104,7 @@ impl FretboardCanvas {
             .map(|(_, position)| position)
     }
 
-    fn draw_grid(&self, frame: &mut canvas::Frame, g: &Geometry) {
+    fn draw_grid(&self, frame: &mut canvas::Frame, g: &Geometry, c: &CanvasColors) {
         let last = self.string_count.saturating_sub(1);
         for string_index in 0..self.string_count {
             let y = g.string_y(string_index);
@@ -134,7 +119,7 @@ impl FretboardCanvas {
                     Point::new(g.fret_x(self.max_fret), y),
                 ),
                 canvas::Stroke::default()
-                    .with_color(STRING)
+                    .with_color(c.string)
                     .with_width(width),
             );
         }
@@ -145,7 +130,7 @@ impl FretboardCanvas {
         );
         frame.stroke(
             &nut,
-            canvas::Stroke::default().with_color(NUT).with_width(6.0),
+            canvas::Stroke::default().with_color(c.nut).with_width(6.0),
         );
 
         for fret in 1..=self.max_fret {
@@ -157,7 +142,7 @@ impl FretboardCanvas {
             frame.stroke(
                 &line,
                 canvas::Stroke::default()
-                    .with_color(FRET_LINE)
+                    .with_color(c.fret_line)
                     .with_width(1.0),
             );
         }
@@ -171,11 +156,11 @@ impl FretboardCanvas {
                 if fret == 12 {
                     let upper = (g.string_y(1) + g.string_y(2)) * 0.5;
                     let lower = (g.string_y(3) + g.string_y(4)) * 0.5;
-                    frame.fill(&canvas::Path::circle(Point::new(x, upper), 4.0), INLAY);
-                    frame.fill(&canvas::Path::circle(Point::new(x, lower), 4.0), INLAY);
+                    frame.fill(&canvas::Path::circle(Point::new(x, upper), 4.0), c.inlay);
+                    frame.fill(&canvas::Path::circle(Point::new(x, lower), 4.0), c.inlay);
                 } else {
                     let middle = (g.string_y(2) + g.string_y(3)) * 0.5;
-                    frame.fill(&canvas::Path::circle(Point::new(x, middle), 4.0), INLAY);
+                    frame.fill(&canvas::Path::circle(Point::new(x, middle), 4.0), c.inlay);
                 }
             }
         }
@@ -185,8 +170,8 @@ impl FretboardCanvas {
             frame.fill_text(canvas::Text {
                 content: fret.to_string(),
                 position: Point::new(g.center_x(fret), number_y),
-                color: FRET_NUMBER,
-                size: 10.0.into(),
+                color: c.fret_number,
+                size: 11.0.into(),
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..canvas::Text::default()
@@ -194,35 +179,43 @@ impl FretboardCanvas {
         }
     }
 
-    fn draw_dot(&self, frame: &mut canvas::Frame, g: &Geometry, v: &Visual) {
+    fn draw_dot(&self, frame: &mut canvas::Frame, g: &Geometry, c: &CanvasColors, v: &Visual) {
         let center = g.center(v.position);
-        let radius = g.dot_radius * (0.25 + 0.75 * v.bloom) * v.scale;
-        if radius < 0.5 {
-            return;
-        }
+        let radius = g.dot_radius;
 
         let path = canvas::Path::circle(center, radius);
 
-        if !v.in_key {
+        if !v.emphasized {
+            // A solid fill masks the string under the dot, so the label
+            // never has a line striking through it.
+            frame.fill(&path, c.background);
             frame.stroke(
                 &path,
                 canvas::Stroke::default()
-                    .with_color(with_alpha(OFF_KEY, v.bloom))
+                    .with_color(c.field_label)
                     .with_width(1.2),
             );
+            if let Some(label) = &v.label {
+                frame.fill_text(canvas::Text {
+                    content: label.clone(),
+                    position: center,
+                    color: c.field_label,
+                    size: 12.0.into(),
+                    align_x: Alignment::Center,
+                    align_y: iced::alignment::Vertical::Center,
+                    ..canvas::Text::default()
+                });
+            }
             return;
         }
 
-        frame.fill(
-            &path,
-            with_alpha(dimmed(ACCENT, 0.4 + 0.6 * v.wave), v.bloom),
-        );
+        frame.fill(&path, c.accent);
 
         if v.root_halo {
             frame.stroke(
                 &canvas::Path::circle(center, radius + 2.5),
                 canvas::Stroke::default()
-                    .with_color(with_alpha(Color::BLACK, v.bloom))
+                    .with_color(c.root_halo)
                     .with_width(2.0),
             );
         }
@@ -231,7 +224,7 @@ impl FretboardCanvas {
             frame.stroke(
                 &canvas::Path::circle(center, radius + 4.0),
                 canvas::Stroke::default()
-                    .with_color(with_alpha(LABEL, 0.9 * v.bloom))
+                    .with_color(c.label)
                     .with_width(1.5),
             );
         }
@@ -240,8 +233,8 @@ impl FretboardCanvas {
             frame.fill_text(canvas::Text {
                 content: label.clone(),
                 position: center,
-                color: with_alpha(LABEL, v.bloom),
-                size: 10.0.into(),
+                color: c.label,
+                size: 12.0.into(),
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..canvas::Text::default()
@@ -250,7 +243,7 @@ impl FretboardCanvas {
     }
 }
 
-impl canvas::Program<Message, Theme, Renderer> for FretboardCanvas {
+impl canvas::Program<board::Event, Theme, Renderer> for FretboardCanvas {
     type State = ();
 
     fn update(
@@ -259,13 +252,12 @@ impl canvas::Program<Message, Theme, Renderer> for FretboardCanvas {
         event: &canvas::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<Action<Message>> {
-        let hovered = self.hit_test(&bounds, cursor);
+    ) -> Option<Action<board::Event>> {
         match event {
-            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                hovered.map(|position| Action::publish(Message::Clicked(position)))
-            }
-            _ => Some(Action::publish(Message::Hovered(hovered))),
+            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => self
+                .hit_test(&bounds, cursor)
+                .map(|position| Action::publish(board::Event::Clicked(position))),
+            _ => None,
         }
     }
 
@@ -273,16 +265,17 @@ impl canvas::Program<Message, Theme, Renderer> for FretboardCanvas {
         &self,
         _state: &(),
         renderer: &Renderer,
-        _theme: &Theme,
+        theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
         let g = Geometry::new(bounds, self.string_count, self.max_fret);
+        let c = CanvasColors::of(theme);
 
-        self.draw_grid(&mut frame, &g);
+        self.draw_grid(&mut frame, &g, &c);
         for v in &self.visuals {
-            self.draw_dot(&mut frame, &g, v);
+            self.draw_dot(&mut frame, &g, &c, v);
         }
 
         vec![frame.into_geometry()]

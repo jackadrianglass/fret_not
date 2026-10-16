@@ -1,5 +1,6 @@
 use absolute::alteration::Alteration;
 use absolute::letter::Letter;
+use absolute::note::Note;
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::chunk_solver;
 use fretboard::fretboard::{degree_at, degree_note, degrees_in_window};
@@ -60,11 +61,35 @@ pub enum LabelMode {
 pub struct Dot {
     pub position: FretboardPosition,
     pub label: String,
+    // The key-anchored register the dot sits in — the count of 7-degree
+    // cycles above the tonic's register 0.
+    pub octave: i32,
     pub is_root: bool,
 }
 
 pub fn degree_label(dr: DegreeReference) -> String {
     dr.scale_degree.label().to_string()
+}
+
+// The slot's degree label against the chunk's anchor note: a trailing
+// apostrophe per octave above it, a trailing comma per octave below — chunk
+// octaves count from the first note of the chunk.
+pub fn slot_label(dr: DegreeReference) -> String {
+    let mut label = dr.scale_degree.label();
+    for _ in 0..dr.octave {
+        label.push('\'');
+    }
+    for _ in 0..(-dr.octave) {
+        label.push(',');
+    }
+    label
+}
+
+// The slot's absolute note against the chunk's base register — [base] is
+// the key-anchored octave of the chunk's own degree-1, the register the
+// editor's clicks resolve against.
+pub fn degree_note_in_register(key: Key, mode: Mode, base: i32, dr: DegreeReference) -> Note {
+    dr.note(Note::new(key.tonic, base), mode)
 }
 
 pub const ROMANS: [&str; 7] = ["I", "II", "III", "IV", "V", "VI", "VII"];
@@ -80,7 +105,7 @@ pub fn chunk_name(index: usize) -> String {
 fn label_of(label_mode: LabelMode, key: Key, mode: Mode, dr: DegreeReference) -> String {
     match label_mode {
         LabelMode::Degrees => degree_label(dr),
-        LabelMode::Notes => degree_note(key, mode, dr).spelled_pitch.to_string(),
+        LabelMode::Notes => degree_note(key, mode, dr).to_string(),
     }
 }
 
@@ -97,6 +122,7 @@ pub fn board(
         .map(|(position, degree)| Dot {
             position,
             label: label_of(label_mode, key, mode, degree),
+            octave: degree.octave,
             is_root: degree.scale_degree.degree == 1,
         })
         .collect();
@@ -133,15 +159,18 @@ pub fn second_chunk() -> Chunk {
     ])
 }
 
-// Every fingering of the chunk over one chord root, ranked by reach distance,
-// plus the slot-to-note index map (None for rests) that aligns the chunk's
-// slots with the fingering rows.
+// Every fingering of the chunk over one chord root, ranked by reach distance
+// from [anchor] with consecutive moves within [fret_cap] frets, plus the
+// slot-to-note index map (None for rests) that aligns the chunk's slots with
+// the fingering rows.
 pub fn solve(
     instrument: &Instrument,
     key: Key,
     mode: Mode,
     chunk: &Chunk,
     root_degree: i32,
+    anchor: FretboardPosition,
+    fret_cap: i32,
 ) -> (Vec<Vec<FretboardPosition>>, Vec<Option<usize>>) {
     let reframed = &chunk::apply_progression(chunk, &[root_degree])[0];
     let mut slot_notes: Vec<Option<usize>> = vec![None; reframed.len()];
@@ -152,13 +181,61 @@ pub fn solve(
             notes.push(*dr);
         }
     }
-    let fingerings = chunk_solver::positions(
-        key,
-        mode,
-        instrument,
-        SOLVER_ANCHOR,
-        SOLVER_FRET_CAP,
-        &notes,
-    );
+    let fingerings = chunk_solver::positions(key, mode, instrument, anchor, fret_cap, &notes);
     (fingerings, slot_notes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slot_label_marks_each_octave_against_the_anchor_note() {
+        assert_eq!(slot_label(DegreeReference::natural(2, 0)), "2");
+        assert_eq!(slot_label(DegreeReference::natural(2, 1)), "2'");
+        assert_eq!(
+            slot_label(DegreeReference::new(
+                ScaleDegree::new(3, Alteration::Flat),
+                2
+            )),
+            "b3''"
+        );
+        assert_eq!(slot_label(DegreeReference::natural(7, -1)), "7,");
+    }
+
+    #[test]
+    fn degree_note_in_register_names_the_register_the_chunk_sits_in() {
+        let key = key_of(TONICS[0], Quality::Major);
+        let note = degree_note_in_register(key, Mode::Ionian, 2, DegreeReference::natural(3, 0));
+        assert_eq!(note.to_string(), "E2");
+    }
+
+    #[test]
+    fn board_dots_carry_spn_labels_and_key_registers() {
+        let instrument = instrument();
+        let key = key_of(TONICS[0], Quality::Major);
+        let f4 = FretboardPosition {
+            string_index: 5,
+            fret: 1,
+        };
+
+        let (dots, _) = board(&instrument, key, Mode::Ionian, LabelMode::Notes);
+        let dot = dots
+            .iter()
+            .find(|dot| dot.position == f4)
+            .expect("F4 is in key");
+        assert_eq!(dot.label, "F4", "note names are full SPN");
+        assert_eq!(dot.octave, 4, "the key-anchored register");
+
+        let (dots, _) = board(&instrument, key, Mode::Ionian, LabelMode::Degrees);
+        let dot = dots
+            .iter()
+            .find(|dot| dot.position == f4)
+            .expect("F4 is in key");
+        assert_eq!(dot.label, "4");
+        assert_eq!(
+            dot.octave, 4,
+            "one octave count per cycle of 7 degrees above the tonic's register"
+        );
+    }
 }

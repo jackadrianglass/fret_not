@@ -28,23 +28,44 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
 ## Fretboard view (always visible, bottom)
 
 - Grid: one horizontal line per string, light vertical line per fret, fret
-  numbers drawn below the lowest string. Fret count comes from the instrument
-  (max fret per string), not from any UI constant.
+  numbers drawn below the lowest string. Strings are drawn in tab order —
+  high E at the top — and each row is labeled at the left with its open
+  note in SPN (so E2 vs E4 are distinct). Fret count comes from the
+  instrument (max fret per string), not from any UI constant.
 - Every playable position on the instrument gets a dot:
   - In-key positions: filled dot in the theme accent color, degree-1 positions
     additionally ringed with a black halo, label centered in the dot showing
-    either the degree number or the note name (per label-mode dropdown).
+    either the degree number or the full SPN note name (per label-mode
+    dropdown). Degree labels additionally carry the key-referenced octave
+    count as a small subscript beside the number — one count per cycle of 7
+    degrees above the tonic's register.
   - Off-key positions: hollow light-gray circle, no label.
 
 ## Chunk editing page
 
 - A chunk is an equal-duration slot list; each slot is a rest or a
-  degree-reference note (degree 1–7, alteration b/n/#, octave 0 or 1). Slot
-  presence is the rhythm.
+  degree-reference note (degree 1–7, alteration b/n/#, octave counted from
+  the chunk's anchor note — its first note — register-free, so chunks are
+  key-independent). Slot presence is the rhythm.
 - Slot strip: one cell per slot, label is the degree label ("1", "b3", with a
-  trailing apostrophe per octave above the tonic) or "." for a rest; rest cells
-  render dimmed, note cells in the accent color; the selected slot has a
-  cursor outline. Click a cell to select it.
+  trailing apostrophe per octave above the anchor note or a trailing comma
+  per octave below it) or "." for a rest; rest cells render dimmed, note
+  cells in the accent color; the selected slot has a cursor outline. Click a
+  cell to select it. Note cells also show the resolved SPN note name in the
+  register the chunk currently sits in.
+- Board clicks write the selected slot: an in-key position stores its degree
+  with the octave counted from the anchor note; an off-key click clears the
+  slot to a rest. Each write steps the cursor right, appending a rest at the
+  end of the chunk (bounded by the max-slot count). Writing or rewriting the
+  anchor note (the chunk's first note) moves the octave reference, shifting
+  the other notes to keep their sounding pitches; removing it re-references
+  to the next note. Displayed positions are remembered per chunk (keyed with
+  the session key) and stick until the user touches the slot; a note slot
+  never placed from the board fills once from the best current fingering.
+  The solve's fret cap widens to whatever the displayed fingering's widest
+  consecutive move requires, so the displayed fingering is always among the
+  solver's enumerated fingerings. Changing the key drops the positions,
+  which refill from the new key's solve.
 - "+" button after the last cell appends a rest (bounded by a max-slot count);
   "-" removes the selected slot (cursor moves left, or to 0 at the left edge).
 - Inspector row below the strip: Note/Rest toggle, degree dropdown (1–7),

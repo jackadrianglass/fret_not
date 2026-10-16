@@ -432,7 +432,8 @@ mod tests {
         );
         match app.document.chunks[0][0] {
             Slot::Note(dr) => {
-                assert_eq!(dr.scale_degree.degree, 3, "open E2 is degree 3 of C major")
+                assert_eq!(dr.scale_degree.degree, 3, "open E2 is degree 3 of C major");
+                assert_eq!(dr.octave, 0, "stored relative to the chunk's own degree-1");
             }
             Slot::Rest => panic!("expected the slot to hold a note"),
         }

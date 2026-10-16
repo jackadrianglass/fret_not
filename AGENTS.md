@@ -201,7 +201,10 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
   fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; paints
                            from theme-derived CanvasColors, no state, no animation —
                            fret N's dot centers between the N-1 and N wires (where
-                           the finger presses), fret 0 sits left of the nut
+                           the finger presses), fret 0 sits left of the nut;
+                           strings are drawn tab-convention (high E top) with SPN
+                           open-note labels, degree labels carry a small key-referenced
+                           octave-count subscript
 ```
 
 ## Data flow

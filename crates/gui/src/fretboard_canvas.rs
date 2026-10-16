@@ -9,11 +9,25 @@ use crate::board;
 use crate::colors::CanvasColors;
 
 const INLAY_FRETS: [i32; 7] = [3, 5, 7, 9, 12, 15, 17];
+const LABEL_SIZE: f32 = 12.0;
+const SUBSCRIPT_SIZE: f32 = 8.0;
+// Where the subscript's center sits relative to the dot's center: at the
+// main glyph's lower right, derived from the label's font size.
+const SUBSCRIPT_OFFSET: (f32, f32) = (LABEL_SIZE * 0.33, LABEL_SIZE * 0.35);
+
+// The ink box a glyph occupies at [size]: digits and letters render about
+// 0.62·size wide and 0.72·size tall.
+fn glyph_half_extents(size: f32, chars: f32) -> (f32, f32) {
+    (0.31 * size * chars, 0.36 * size)
+}
 
 // One drawn position; the board component builds these, the canvas only paints.
 pub struct Visual {
     pub position: FretboardPosition,
     pub label: Option<String>,
+    // The key-referenced octave count, drawn as a small subscript beside
+    // the degree label — one count per cycle of 7 degrees.
+    pub octave: Option<i32>,
     pub root_halo: bool,
     pub selected: bool,
     pub emphasized: bool,
@@ -23,18 +37,21 @@ pub struct FretboardCanvas {
     pub visuals: Vec<Visual>,
     pub string_count: usize,
     pub max_fret: i32,
+    // The open-note SPN label per string, drawn at the left of its row.
+    pub open_notes: Vec<String>,
 }
 
 struct Geometry {
     left: f32,
     top: f32,
+    rows: usize,
     fret_width: f32,
     string_gap: f32,
     dot_radius: f32,
 }
 
 impl Geometry {
-    fn new(bounds: Rectangle, string_count: usize, max_fret: i32) -> Geometry {
+    fn new(bounds: Rectangle, string_count: usize, max_fret: i32, content_radius: f32) -> Geometry {
         // The left pad hosts the open-string dots, which sit left of the nut.
         let pad_x = 48.0;
         let pad_right = 24.0;
@@ -49,9 +66,12 @@ impl Geometry {
         Geometry {
             left: pad_x,
             top: pad_top,
+            rows: string_count,
             fret_width,
             string_gap,
-            dot_radius: (fret_width * 0.22).clamp(7.0, 14.0),
+            // The rim must clear the label stack even when the fret spacing
+            // alone would allow a smaller dot.
+            dot_radius: (fret_width * 0.22).clamp(7.0, 14.0).max(content_radius),
         }
     }
 
@@ -71,8 +91,10 @@ impl Geometry {
         }
     }
 
+    // Tab convention: the highest string is the top row, so [string_index]
+    // (numbered low to high) counts the rows from the bottom up.
     fn string_y(&self, string_index: usize) -> f32 {
-        self.top + string_index as f32 * self.string_gap
+        self.top + (self.rows - 1 - string_index) as f32 * self.string_gap
     }
 
     fn center(&self, position: FretboardPosition) -> Point {
@@ -84,8 +106,41 @@ impl Geometry {
 }
 
 impl FretboardCanvas {
+    // The radius floor that keeps every dot's content inside the rim: the
+    // label centered, plus the octave subscript where one is present. The
+    // half-extents of the stacked content box, corner to rim.
+    fn content_radius(&self) -> f32 {
+        self.visuals
+            .iter()
+            .filter_map(|v| {
+                v.label
+                    .as_ref()
+                    .map(|label| (v.octave.is_some(), label.len() as f32))
+            })
+            .map(|(subscripted, chars)| {
+                let (main_w, main_h) = glyph_half_extents(LABEL_SIZE, chars);
+                let (w, h) = match subscripted {
+                    true => {
+                        let (sub_w, sub_h) = glyph_half_extents(SUBSCRIPT_SIZE, 1.0);
+                        (
+                            main_w.max(SUBSCRIPT_OFFSET.0 + sub_w),
+                            main_h.max(SUBSCRIPT_OFFSET.1 + sub_h),
+                        )
+                    }
+                    false => (main_w, main_h),
+                };
+                (w * w + h * h).sqrt()
+            })
+            .fold(0.0, f32::max)
+    }
+
     fn geometry(&self, bounds: &Rectangle) -> Geometry {
-        Geometry::new(*bounds, self.string_count, self.max_fret)
+        Geometry::new(
+            *bounds,
+            self.string_count,
+            self.max_fret,
+            self.content_radius(),
+        )
     }
 
     fn hit_test(&self, bounds: &Rectangle, cursor: mouse::Cursor) -> Option<FretboardPosition> {
@@ -165,13 +220,57 @@ impl FretboardCanvas {
             }
         }
 
-        let number_y = g.string_y(last) + 18.0;
+        // Below the lowest drawn row — string 0 under tab order.
+        let number_y = g.string_y(0) + 18.0;
         for fret in 1..=self.max_fret {
             frame.fill_text(canvas::Text {
                 content: fret.to_string(),
                 position: Point::new(g.center_x(fret), number_y),
                 color: c.fret_number,
                 size: 11.0.into(),
+                align_x: Alignment::Center,
+                align_y: iced::alignment::Vertical::Center,
+                ..canvas::Text::default()
+            });
+        }
+
+        for string_index in 0..self.string_count {
+            if let Some(note) = self.open_notes.get(string_index) {
+                frame.fill_text(canvas::Text {
+                    content: note.clone(),
+                    position: Point::new(4.0, g.string_y(string_index)),
+                    color: c.fret_number,
+                    size: 11.0.into(),
+                    align_x: Alignment::Left,
+                    align_y: iced::alignment::Vertical::Center,
+                    ..canvas::Text::default()
+                });
+            }
+        }
+    }
+
+    // The centered degree label with its octave count drawn as a small
+    // subscript beside it — the count of 7-degree cycles above the tonic.
+    fn draw_label(&self, frame: &mut canvas::Frame, g: &Geometry, c: &CanvasColors, v: &Visual) {
+        let center = g.center(v.position);
+        let color = if v.emphasized { c.label } else { c.field_label };
+        if let Some(label) = &v.label {
+            frame.fill_text(canvas::Text {
+                content: label.clone(),
+                position: center,
+                color,
+                size: LABEL_SIZE.into(),
+                align_x: Alignment::Center,
+                align_y: iced::alignment::Vertical::Center,
+                ..canvas::Text::default()
+            });
+        }
+        if let Some(octave) = v.octave {
+            frame.fill_text(canvas::Text {
+                content: octave.to_string(),
+                position: Point::new(center.x + SUBSCRIPT_OFFSET.0, center.y + SUBSCRIPT_OFFSET.1),
+                color,
+                size: SUBSCRIPT_SIZE.into(),
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..canvas::Text::default()
@@ -195,17 +294,7 @@ impl FretboardCanvas {
                     .with_color(c.field_label)
                     .with_width(1.2),
             );
-            if let Some(label) = &v.label {
-                frame.fill_text(canvas::Text {
-                    content: label.clone(),
-                    position: center,
-                    color: c.field_label,
-                    size: 12.0.into(),
-                    align_x: Alignment::Center,
-                    align_y: iced::alignment::Vertical::Center,
-                    ..canvas::Text::default()
-                });
-            }
+            self.draw_label(frame, g, c, v);
             return;
         }
 
@@ -229,17 +318,7 @@ impl FretboardCanvas {
             );
         }
 
-        if let Some(label) = &v.label {
-            frame.fill_text(canvas::Text {
-                content: label.clone(),
-                position: center,
-                color: c.label,
-                size: 12.0.into(),
-                align_x: Alignment::Center,
-                align_y: iced::alignment::Vertical::Center,
-                ..canvas::Text::default()
-            });
-        }
+        self.draw_label(frame, g, c, v);
     }
 }
 
@@ -270,7 +349,7 @@ impl canvas::Program<board::Event, Theme, Renderer> for FretboardCanvas {
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let g = Geometry::new(bounds, self.string_count, self.max_fret);
+        let g = self.geometry(&bounds);
         let c = CanvasColors::of(theme);
 
         self.draw_grid(&mut frame, &g, &c);

@@ -42,6 +42,8 @@ impl TabScreen {
             session.mode(),
             chunk,
             model::PROGRESSION[self.chord_index],
+            model::SOLVER_ANCHOR,
+            model::SOLVER_FRET_CAP,
         );
         self.solved = solved;
         self.slot_notes = slot_notes;
@@ -117,6 +119,7 @@ pub fn view<'a>(
     .align_y(Alignment::Center);
 
     let lines: Vec<String> = (0..session.instrument.string_count())
+        .rev()
         .map(|string_index| {
             let mut line = format!(
                 "{:>3}|",

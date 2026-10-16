@@ -40,6 +40,16 @@ pub fn set(chunk: &mut Chunk, index: usize, slot: Slot) -> Slot {
     std::mem::replace(&mut chunk.0[index], slot)
 }
 
+// Shift every note's octave by [delta]; rests pass through. Interval content
+// is preserved — only the register the octaves count from moves.
+pub fn shift_octaves(chunk: &mut Chunk, delta: i32) {
+    for slot in chunk.0.iter_mut() {
+        if let Slot::Note(dr) = slot {
+            dr.octave += delta;
+        }
+    }
+}
+
 fn reframe_degree_reference(dr: DegreeReference, root_degree: i32) -> DegreeReference {
     let raw_degree = dr.scale_degree.degree - 1 + (root_degree - 1);
     DegreeReference {
@@ -72,7 +82,7 @@ pub fn apply_progression(chunk: &Chunk, root_degrees: &[i32]) -> Vec<Chunk> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, Slot, apply_progression, push, reframe, remove, set};
+    use super::{Chunk, Slot, apply_progression, push, reframe, remove, set, shift_octaves};
     use crate::degree_reference::DegreeReference;
     use crate::scale_degree::ScaleDegree;
     use absolute::alteration::Alteration;
@@ -213,5 +223,20 @@ mod tests {
             "set returns the slot it replaced"
         );
         assert_eq!(chunk.len(), 2, "set keeps the slot count");
+    }
+
+    #[test]
+    fn shift_octaves_moves_notes_and_leaves_rests_alone() {
+        let mut chunk = Chunk::new(vec![
+            note(1, 0, Alteration::Natural),
+            Slot::Rest,
+            note(2, 1, Alteration::Flat),
+        ]);
+        shift_octaves(&mut chunk, 1);
+        assert_eq!(
+            as_tuples(&chunk),
+            vec![Some((1, 1, 0)), None, Some((2, 2, -1))],
+            "every note shifts one octave, rests pass through"
+        );
     }
 }

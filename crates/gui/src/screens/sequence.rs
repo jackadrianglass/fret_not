@@ -41,6 +41,8 @@ impl SequenceScreen {
             session.mode(),
             chunk,
             step.root,
+            model::SOLVER_ANCHOR,
+            model::SOLVER_FRET_CAP,
         );
         self.solved = solved;
         self.slot_notes = slot_notes;
@@ -92,7 +94,7 @@ pub fn view<'a>(
         let glyphs = chunk
             .iter()
             .map(|slot| match slot {
-                Slot::Note(dr) => model::degree_label(*dr),
+                Slot::Note(dr) => model::slot_label(*dr),
                 Slot::Rest => ".".to_string(),
             })
             .collect::<Vec<_>>()

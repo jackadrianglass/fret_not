@@ -1,6 +1,7 @@
 use iced::widget::canvas;
 use iced::{Element, Fill};
 
+use fretboard::fingering::Fingering;
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::tuning;
@@ -17,10 +18,10 @@ pub enum Event {
 
 // The merged board presentation, shared by every screen: the full in-key
 // field as a dim backdrop, with the played positions emphasized on top of
-// it. `selected` rings one position — the edit page points it at the
-// selected slot's position.
+// it. [positions] is the fingering being displayed; `selected` rings one
+// position — the edit page points it at the selected slot's position.
 pub struct Highlight {
-    pub positions: Vec<FretboardPosition>,
+    pub positions: Fingering,
     pub selected: Option<FretboardPosition>,
 }
 

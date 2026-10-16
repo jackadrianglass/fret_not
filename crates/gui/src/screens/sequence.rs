@@ -1,7 +1,7 @@
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill, Font};
 
-use fretboard::fretboard_position::FretboardPosition;
+use fretboard::fingering::Fingering;
 use relative::chunk::Slot;
 
 use crate::board::{self, BoardState, Highlight};
@@ -11,7 +11,7 @@ use crate::{Document, Session, outlined};
 
 pub struct SequenceScreen {
     step: usize,
-    solved: Vec<Vec<FretboardPosition>>,
+    solved: Vec<Fingering>,
     slot_notes: Vec<Option<usize>>,
 }
 

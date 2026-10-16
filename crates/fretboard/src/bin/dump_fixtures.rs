@@ -2,6 +2,7 @@ use absolute::alteration::Alteration;
 use absolute::letter::Letter;
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::chunk_solver;
+use fretboard::fingering::{self, Fingering};
 use fretboard::fretboard as fb;
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
@@ -92,17 +93,11 @@ fn chunk_notes(chunk: &Chunk) -> Vec<DegreeReference> {
         .collect()
 }
 
-fn solver_total(shape: &[FretboardPosition]) -> i32 {
-    let mut total = 0;
-    let mut prev = ANCHOR;
-    for position in shape {
-        total += chunk_solver::distance(prev, *position);
-        prev = *position;
-    }
-    total
+fn solver_total(shape: &Fingering) -> i32 {
+    fingering::total_distance(ANCHOR, shape)
 }
 
-fn print_canonical_shapes(shapes: Vec<Vec<FretboardPosition>>) {
+fn print_canonical_shapes(shapes: Vec<Fingering>) {
     let mut canonical: Vec<(i32, String)> = shapes
         .iter()
         .map(|shape| (solver_total(shape), shape_string(shape)))

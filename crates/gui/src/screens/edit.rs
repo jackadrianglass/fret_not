@@ -4,6 +4,7 @@ use absolute::spelled_pitch::SpelledPitch;
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Element, Fill};
 
+use fretboard::fingering::{self, Fingering};
 use fretboard::fretboard::degree_at;
 use fretboard::fretboard_position::FretboardPosition;
 use relative::chunk::{self, Chunk, Slot};
@@ -27,6 +28,11 @@ struct ChunkEdit {
     // where the solve voices it, until then) and moved when the anchor note
     // itself is rewritten.
     base: Option<i32>,
+    // The solve's fret cap: grows only when the user places a wider move
+    // than it admits. Swaps bring in fingerings the cap already
+    // enumerated, so it never moves during rotation and the catalog stays
+    // fixed.
+    cap: i32,
     // Slot-aligned display positions; None for rests and slots not yet
     // placed. A position only changes when the user touches the slot.
     positions: Vec<Option<FretboardPosition>>,
@@ -35,11 +41,14 @@ struct ChunkEdit {
 pub struct EditScreen {
     slot: usize,
     edits: HashMap<usize, ChunkEdit>,
-    solved: Vec<Vec<FretboardPosition>>,
+    solved: Vec<Fingering>,
     slot_notes: Vec<Option<usize>>,
-    // The emphasized positions: the selected chunk's displayed fingering,
-    // slot-aligned in [edits] and projected here for the view.
-    positions: Vec<FretboardPosition>,
+    // The displayed fingering: the selected chunk's positions, slot-aligned
+    // in [edits] and projected here for the view.
+    positions: Fingering,
+    // Which member of [solved] is currently displayed — the stepper's
+    // index, re-derived in refresh from [positions].
+    fingering_index: Option<usize>,
     // The chunk + session the caches were derived against; a change resets
     // the cursor and, on a key change, the click history.
     anchored: Option<(usize, SpelledPitch, Quality)>,
@@ -89,6 +98,8 @@ pub enum Message {
     AddSlot,
     RemoveSlot,
     ToggleRest,
+    FingeringPrev,
+    FingeringNext,
 }
 
 impl EditScreen {
@@ -98,7 +109,8 @@ impl EditScreen {
             edits: HashMap::new(),
             solved: Vec::new(),
             slot_notes: Vec::new(),
-            positions: Vec::new(),
+            positions: Fingering::default(),
+            fingering_index: None,
             anchored: None,
         }
     }
@@ -128,26 +140,39 @@ impl EditScreen {
             .entry(document.selected_chunk)
             .or_insert_with(|| ChunkEdit {
                 base: None,
+                cap: model::SOLVER_FRET_CAP,
                 positions: vec![None; chunk.len()],
             });
-        // The solve window centers on the anchor note's displayed position.
-        let window = anchor_index(chunk)
-            .and_then(|i| edit.positions.get(i).copied().flatten())
-            .unwrap_or(model::SOLVER_ANCHOR);
-        // The fret cap widens to admit the displayed fingering: every
-        // consecutive move the chunk already shows must be inside the
-        // solver's reach, so the displayed fingering is always among the
-        // enumerated.
-        let cap = displayed_fret_span(edit, chunk).max(model::SOLVER_FRET_CAP);
-        let (solved, slot_notes) = model::solve(
-            &session.instrument,
-            session.key(),
-            session.mode(),
-            chunk,
-            1,
-            window,
-            cap,
-        );
+        // The cap grows only when the user places a wider move than it
+        // admits — swapped-in fingerings are always within it, so the
+        // rotation catalog stays fixed.
+        edit.cap = edit.cap.max(displayed_fret_span(edit, chunk));
+        let anchor_position =
+            anchor_index(chunk).and_then(|i| edit.positions.get(i).copied().flatten());
+        let (solved, slot_notes) = match anchor_position {
+            // The root note is pinned where the user placed it: the catalog
+            // holds every fingering that keeps it there.
+            Some(first) => model::solve_pinned(
+                &session.instrument,
+                session.key(),
+                session.mode(),
+                chunk,
+                1,
+                first,
+                edit.cap,
+            ),
+            // Nothing placed yet — enumerate around the default window so
+            // never-placed slots can fill.
+            None => model::solve(
+                &session.instrument,
+                session.key(),
+                session.mode(),
+                chunk,
+                1,
+                model::SOLVER_ANCHOR,
+                edit.cap,
+            ),
+        };
         self.solved = solved;
         self.slot_notes = slot_notes;
         // A note slot without a position takes one from the best current
@@ -186,7 +211,11 @@ impl EditScreen {
                 Slot::Rest => None,
             })
             .collect();
-        self.positions = positions;
+        self.positions = Fingering::new(positions);
+        self.fingering_index = self
+            .solved
+            .iter()
+            .position(|fingering| *fingering == self.positions);
     }
 
     // True when the document changed and the other screens' caches are stale.
@@ -244,6 +273,8 @@ impl EditScreen {
                 }
                 true
             }
+            Message::FingeringPrev => step_fingering(self, document, -1),
+            Message::FingeringNext => step_fingering(self, document, 1),
         }
     }
 }
@@ -272,6 +303,7 @@ fn write_position(
         .entry(document.selected_chunk)
         .or_insert_with(|| ChunkEdit {
             base: None,
+            cap: model::SOLVER_FRET_CAP,
             positions: vec![None; chunk.len()],
         });
     let edit = screen.edits.get_mut(&document.selected_chunk).unwrap();
@@ -317,6 +349,28 @@ fn write_position(
     true
 }
 
+// Steps the displayed fingering to the catalog's neighbor (wrapping) and
+// writes it back as the chunk's sticky positions. The root note stays
+// pinned — every member voices it at the same position, so the octave
+// reference never moves.
+fn step_fingering(screen: &mut EditScreen, document: &mut Document, delta: i32) -> bool {
+    let Some(index) = screen.fingering_index else {
+        return false;
+    };
+    let len = screen.solved.len();
+    let Some(swapped) = screen
+        .solved
+        .get((index as i32 + delta).rem_euclid(len as i32) as usize)
+    else {
+        return false;
+    };
+    let Some(edit) = screen.edits.get_mut(&document.selected_chunk) else {
+        return false;
+    };
+    edit.positions = fingering::slot_positions(swapped, &screen.slot_notes);
+    true
+}
+
 pub fn view<'a>(
     screen: &'a EditScreen,
     session: &'a Session,
@@ -326,11 +380,27 @@ pub fn view<'a>(
     let chunk = &document.chunks[document.selected_chunk];
     let base = screen.base(document);
 
-    let band = container(slot_band(screen, session, base, chunk))
-        .width(Fill)
-        .height(Fill)
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center);
+    let stepper = row![
+        button("prev").on_press(Message::FingeringPrev),
+        text(format!(
+            "{}/{}",
+            screen.fingering_index.map(|i| i + 1).unwrap_or(0),
+            screen.solved.len()
+        )),
+        button("next").on_press(Message::FingeringNext),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let band = container(
+        column![slot_band(screen, session, base, chunk), stepper]
+            .spacing(8)
+            .align_x(Alignment::Center),
+    )
+    .width(Fill)
+    .height(Fill)
+    .align_x(iced::alignment::Horizontal::Center)
+    .align_y(iced::alignment::Vertical::Center);
 
     let board_area = container(
         board::view(
@@ -486,7 +556,7 @@ mod tests {
         );
         assert_eq!(
             screen.positions,
-            vec![pos(0, 0), pos(0, 12)],
+            Fingering::new(vec![pos(0, 0), pos(0, 12)]),
             "both clicks display where they were clicked"
         );
     }
@@ -516,7 +586,7 @@ mod tests {
         );
         assert_eq!(
             screen.positions,
-            vec![pos(0, 12), pos(0, 0)],
+            Fingering::new(vec![pos(0, 12), pos(0, 0)]),
             "both clicks display where they were clicked"
         );
     }
@@ -613,13 +683,13 @@ mod tests {
         click(&mut screen, &session, &mut document, pos(4, 6));
 
         assert_eq!(
-            screen.solved.first().map(|fingering| fingering.as_slice()),
-            Some(&[pos(0, 0), pos(5, 1)][..]),
+            screen.solved.first(),
+            Some(&Fingering::new(vec![pos(0, 0), pos(5, 1)])),
             "the solve re-voices slot 1's F4 to the high E string"
         );
         assert_eq!(
             screen.positions,
-            vec![pos(0, 0), pos(4, 6)],
+            Fingering::new(vec![pos(0, 0), pos(4, 6)]),
             "the authored click is displayed where it was clicked"
         );
         assert_eq!(
@@ -692,12 +762,12 @@ mod tests {
 
         assert_eq!(
             screen.positions,
-            vec![pos(4, 0), filled],
+            Fingering::new(vec![pos(4, 0), filled]),
             "the filled position sticks across edits; only the touched slot moves"
         );
         assert_ne!(
-            screen.solved.first().map(|fingering| fingering.as_slice()),
-            Some(&screen.positions[..]),
+            screen.solved.first(),
+            Some(&screen.positions),
             "the solve would have re-voiced slot 1 — the fill must not follow it"
         );
     }
@@ -781,13 +851,114 @@ mod tests {
         click(&mut screen, &session, &mut document, pos(0, 0));
         click(&mut screen, &session, &mut document, pos(0, 12));
 
-        assert_eq!(screen.positions, vec![pos(0, 0), pos(0, 12)]);
+        assert_eq!(
+            screen.positions,
+            Fingering::new(vec![pos(0, 0), pos(0, 12)])
+        );
         assert!(
             screen
                 .solved
                 .iter()
-                .any(|fingering| fingering == &vec![pos(0, 0), pos(0, 12)]),
+                .any(|fingering| *fingering == Fingering::new(vec![pos(0, 0), pos(0, 12)])),
             "the displayed fingering is among the solved despite the 12-fret move"
+        );
+    }
+
+    #[test]
+    fn fingering_steps_swap_the_displayed_positions() {
+        let session = session();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document);
+
+        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, pos(4, 6));
+
+        screen.update(Message::FingeringPrev, &session, &mut document);
+        screen.refresh(&session, &document);
+        assert_eq!(
+            screen.positions,
+            Fingering::new(vec![pos(0, 0), pos(5, 1)]),
+            "the solve's top-ranked neighbor becomes the displayed fingering"
+        );
+
+        screen.update(Message::FingeringNext, &session, &mut document);
+        screen.refresh(&session, &document);
+        assert_eq!(
+            screen.positions,
+            Fingering::new(vec![pos(0, 0), pos(4, 6)]),
+            "stepping back returns to the authored fingering"
+        );
+    }
+
+    #[test]
+    fn rotation_keeps_the_root_note_pinned() {
+        let session = session();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document);
+
+        click(&mut screen, &session, &mut document, pos(0, 0));
+        assert_eq!(
+            screen.solved,
+            vec![Fingering::new(vec![pos(0, 0)])],
+            "a pinned single note has exactly one fingering"
+        );
+
+        screen.update(Message::FingeringNext, &session, &mut document);
+        screen.refresh(&session, &document);
+        assert_eq!(
+            screen.positions,
+            Fingering::new(vec![pos(0, 0)]),
+            "stepping cannot move the pinned root note"
+        );
+        assert_eq!(
+            screen.edits[&0].base,
+            Some(2),
+            "the octave reference stays where the root was placed"
+        );
+    }
+
+    #[test]
+    fn every_fingering_keeps_the_root_note_where_it_was_placed() {
+        let session = session();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document);
+
+        click(&mut screen, &session, &mut document, pos(4, 0));
+        click(&mut screen, &session, &mut document, pos(4, 8));
+
+        assert!(
+            screen
+                .solved
+                .iter()
+                .all(|fingering| fingering.first() == Some(&pos(4, 0))),
+            "the pinned root note leads every member of the catalog"
+        );
+        assert!(
+            screen.solved.len() >= 2,
+            "the B string open root has multiple voicings of the G4 around it"
+        );
+    }
+
+    #[test]
+    fn rotation_does_not_reshape_the_catalog() {
+        let session = session();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document);
+
+        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, pos(0, 12));
+        let catalog = screen.solved.clone();
+        assert!(catalog.len() >= 2, "the wide move widens the catalog");
+
+        screen.update(Message::FingeringPrev, &session, &mut document);
+        screen.refresh(&session, &document);
+        assert_eq!(
+            screen.solved, catalog,
+            "stepping does not re-resolve or re-rank the catalog"
         );
     }
 }

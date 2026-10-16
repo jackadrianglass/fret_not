@@ -66,6 +66,13 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   consecutive move requires, so the displayed fingering is always among the
   solver's enumerated fingerings. Changing the key drops the positions,
   which refill from the new key's solve.
+- A prev / "i of n" / next stepper under the strip walks the chunk's rotation
+  catalog: every fingering that keeps the root note (the anchor note) pinned
+  exactly where the user placed it — string and fret — with the rest of the
+  notes enumerated within the chunk's fret cap around it. The catalog is
+  stable while rotating; the cap grows only when the user's own input is
+  wider than it admits, never from a swap. A never-placed chunk enumerates
+  around the default window so its slots can fill.
 - "+" button after the last cell appends a rest (bounded by a max-slot count);
   "-" removes the selected slot (cursor moves left, or to 0 at the left edge).
 - Inspector row below the strip: Note/Rest toggle, degree dropdown (1–7),

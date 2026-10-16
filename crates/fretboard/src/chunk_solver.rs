@@ -2,15 +2,10 @@ use relative::degree_reference::DegreeReference;
 use relative::key::Key;
 use relative::mode::Mode;
 
+use crate::fingering::{self, Fingering};
 use crate::fretboard;
 use crate::fretboard_position::FretboardPosition;
 use crate::instrument::Instrument;
-use crate::reach;
-
-pub fn distance(a: FretboardPosition, b: FretboardPosition) -> i32 {
-    let stretch = reach::between(a, b);
-    stretch.fret_span + stretch.string_span
-}
 
 fn root_semitone(key: Key) -> i32 {
     fretboard::root_note(key).semitone()
@@ -105,14 +100,37 @@ fn chain(
     }
 }
 
-fn total_distance(anchor: FretboardPosition, shape: &[FretboardPosition]) -> i32 {
-    let mut total = 0;
-    let mut prev = anchor;
-    for position in shape {
-        total += distance(prev, *position);
-        prev = *position;
-    }
-    total
+// Every fingering continuing from [origin], which already voices [first]:
+// the rest chain at the register offset [origin] implies, prepended with
+// [origin] itself.
+fn anchored(
+    key: Key,
+    mode: Mode,
+    instrument: &Instrument,
+    max_fret_distance: i32,
+    origin: FretboardPosition,
+    first: DegreeReference,
+    rest: &[DegreeReference],
+) -> Vec<Fingering> {
+    let offset =
+        instrument.semitone_at(origin) - fretboard::degree_note(key, mode, first).semitone();
+    chain(
+        key,
+        mode,
+        instrument,
+        max_fret_distance,
+        offset,
+        origin,
+        rest,
+    )
+    .into_iter()
+    .map(|mut tail| {
+        let mut with_first = Vec::with_capacity(tail.len() + 1);
+        with_first.push(origin);
+        with_first.append(&mut tail);
+        Fingering::new(with_first)
+    })
+    .collect()
 }
 
 pub fn positions(
@@ -122,14 +140,14 @@ pub fn positions(
     start_anchor: FretboardPosition,
     max_fret_distance: i32,
     notes: &[DegreeReference],
-) -> Vec<Vec<FretboardPosition>> {
+) -> Vec<Fingering> {
     match notes {
-        [] => vec![Vec::new()],
+        [] => vec![Fingering::new(Vec::new())],
         [first, rest @ ..] => {
             // Resolve each note's absolute semitone (via degree_note) FIRST,
             // then choose only *which string* — skipping this broke every
             // non-tonic chord.
-            let mut shapes: Vec<Vec<FretboardPosition>> = first_note_candidates(
+            let mut shapes: Vec<Fingering> = first_note_candidates(
                 key,
                 mode,
                 instrument,
@@ -139,27 +157,46 @@ pub fn positions(
             )
             .into_iter()
             .flat_map(|position| {
-                let offset = instrument.semitone_at(position)
-                    - fretboard::degree_note(key, mode, *first).semitone();
-                chain(
+                anchored(
                     key,
                     mode,
                     instrument,
                     max_fret_distance,
-                    offset,
                     position,
+                    *first,
                     rest,
                 )
-                .into_iter()
-                .map(move |mut shape| {
-                    let mut with_first = Vec::with_capacity(shape.len() + 1);
-                    with_first.push(position);
-                    with_first.append(&mut shape);
-                    with_first
-                })
             })
             .collect();
-            shapes.sort_by_key(|shape| total_distance(start_anchor, shape));
+            shapes.sort_by_key(|fingering| fingering::total_distance(start_anchor, fingering));
+            shapes
+        }
+    }
+}
+
+// Every fingering whose first note is played exactly at [first]; the rest
+// enumerate within the cap of it, ranked by reach from it.
+pub fn positions_from(
+    key: Key,
+    mode: Mode,
+    instrument: &Instrument,
+    first: FretboardPosition,
+    max_fret_distance: i32,
+    notes: &[DegreeReference],
+) -> Vec<Fingering> {
+    match notes {
+        [] => vec![Fingering::new(Vec::new())],
+        [first_note, rest @ ..] => {
+            let mut shapes = anchored(
+                key,
+                mode,
+                instrument,
+                max_fret_distance,
+                first,
+                *first_note,
+                rest,
+            );
+            shapes.sort_by_key(|fingering| fingering::total_distance(first, fingering));
             shapes
         }
     }
@@ -167,7 +204,8 @@ pub fn positions(
 
 #[cfg(test)]
 mod tests {
-    use super::{distance, positions};
+    use super::{positions, positions_from};
+    use crate::fingering::{Fingering, distance};
     use crate::fretboard_position::FretboardPosition;
     use crate::instrument::Instrument;
     use crate::tuning;
@@ -262,7 +300,7 @@ mod tests {
         );
         for shape in &shapes {
             let mut prev = low_e_fret_8();
-            for position in shape {
+            for position in shape.iter() {
                 assert!(
                     (position.fret - prev.fret).abs() <= 7,
                     "no move exceeds the fret cap"
@@ -287,7 +325,7 @@ mod tests {
             .map(|shape| {
                 let mut total = 0;
                 let mut prev = low_e_fret_8();
-                for position in shape {
+                for position in shape.iter() {
                     total += distance(prev, *position);
                     prev = *position;
                 }
@@ -371,6 +409,50 @@ mod tests {
             intervals_of(&shapes[0]),
             vec![12],
             "a full octave, ascending"
+        );
+    }
+
+    #[test]
+    fn pinned_positions_keep_the_first_note_at_its_position() {
+        // The first note pinned at C4 on the B string's first fret; the
+        // fifth (G4) is reachable at the high E's 3rd fret or the B
+        // string's 8th within a cap of 8, ranked by reach from the pin.
+        let shapes = positions_from(
+            c_major(),
+            Mode::Ionian,
+            &instrument(),
+            FretboardPosition {
+                string_index: 4,
+                fret: 1,
+            },
+            8,
+            &natural_degrees(&[(1, 0), (5, 0)]),
+        );
+        assert_eq!(
+            shapes,
+            vec![
+                Fingering::new(vec![
+                    FretboardPosition {
+                        string_index: 4,
+                        fret: 1
+                    },
+                    FretboardPosition {
+                        string_index: 5,
+                        fret: 3
+                    },
+                ]),
+                Fingering::new(vec![
+                    FretboardPosition {
+                        string_index: 4,
+                        fret: 1
+                    },
+                    FretboardPosition {
+                        string_index: 4,
+                        fret: 8
+                    },
+                ]),
+            ],
+            "the pinned note leads every fingering; the rest rank by reach from it"
         );
     }
 }

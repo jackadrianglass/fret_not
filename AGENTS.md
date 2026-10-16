@@ -153,14 +153,24 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            so far (Chunk_solver's distance); ranking by semitone_span
                            awaits the pick-and-practice flow.
   chunk_solver.rs          positions() — every fingering of a chunk, ranked by reach
-                           distance from a start anchor. CRITICAL invariant: resolve
-                           each note's absolute semitone (via Fretboard::degree_note)
-                           FIRST, then choose only *which string* — the comment at the
-                           call site says why. The first note's octave window is
-                           derived from Instrument::range — no magic sweep constants —
-                           and candidate enumeration reuses
-                           Fretboard::positions_of_semitone. Lives here, not beside
-                           Chunk: it maps chunks onto the instrument.
+                           distance from a start anchor; positions_from() — the
+                           same with the first note pinned to an exact position
+                           (the edit screen's rotation catalog). CRITICAL
+                           invariant: resolve each note's absolute semitone (via
+                           Fretboard::degree_note) FIRST, then choose only
+                           *which string* — the comment at the call site says
+                           why. The first note's octave window is derived from
+                           Instrument::range — no magic sweep constants — and
+                           candidate enumeration reuses
+                           Fretboard::positions_of_semitone. Lives here, not
+                           beside Chunk: it maps chunks onto the instrument.
+  fingering.rs             Fingering — one concrete way to play a sequence of
+                           notes, a position per note in note order (newtype
+                           over Vec, Deref to the slice). slot_positions()
+                           projects a fingering back onto slot-aligned
+                           positions (None for rests) via the slot-to-note
+                           map; distance()/total_distance() are the reach
+                           metrics fingerings are ranked by
   bin/dump_fixtures.rs     prints canonical solver/shape/window fixtures across keys and
                            tunings; the regression corpus for future refactors —
                            re-baseline it deliberately.

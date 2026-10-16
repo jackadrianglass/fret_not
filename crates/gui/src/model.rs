@@ -3,6 +3,7 @@ use absolute::letter::Letter;
 use absolute::note::Note;
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::chunk_solver;
+use fretboard::fingering::Fingering;
 use fretboard::fretboard::{degree_at, degree_note, degrees_in_window};
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
@@ -163,15 +164,8 @@ pub fn second_chunk() -> Chunk {
 // from [anchor] with consecutive moves within [fret_cap] frets, plus the
 // slot-to-note index map (None for rests) that aligns the chunk's slots with
 // the fingering rows.
-pub fn solve(
-    instrument: &Instrument,
-    key: Key,
-    mode: Mode,
-    chunk: &Chunk,
-    root_degree: i32,
-    anchor: FretboardPosition,
-    fret_cap: i32,
-) -> (Vec<Vec<FretboardPosition>>, Vec<Option<usize>>) {
+// The chunk's notes and the slot-to-note alignment (None for rests).
+fn notes_of(chunk: &Chunk, root_degree: i32) -> (Vec<DegreeReference>, Vec<Option<usize>>) {
     let reframed = &chunk::apply_progression(chunk, &[root_degree])[0];
     let mut slot_notes: Vec<Option<usize>> = vec![None; reframed.len()];
     let mut notes = Vec::new();
@@ -181,7 +175,36 @@ pub fn solve(
             notes.push(*dr);
         }
     }
+    (notes, slot_notes)
+}
+
+pub fn solve(
+    instrument: &Instrument,
+    key: Key,
+    mode: Mode,
+    chunk: &Chunk,
+    root_degree: i32,
+    anchor: FretboardPosition,
+    fret_cap: i32,
+) -> (Vec<Fingering>, Vec<Option<usize>>) {
+    let (notes, slot_notes) = notes_of(chunk, root_degree);
     let fingerings = chunk_solver::positions(key, mode, instrument, anchor, fret_cap, &notes);
+    (fingerings, slot_notes)
+}
+
+// Every fingering of the chunk whose first note is played exactly at
+// [first] — the rotation catalog around a pinned root note.
+pub fn solve_pinned(
+    instrument: &Instrument,
+    key: Key,
+    mode: Mode,
+    chunk: &Chunk,
+    root_degree: i32,
+    first: FretboardPosition,
+    fret_cap: i32,
+) -> (Vec<Fingering>, Vec<Option<usize>>) {
+    let (notes, slot_notes) = notes_of(chunk, root_degree);
+    let fingerings = chunk_solver::positions_from(key, mode, instrument, first, fret_cap, &notes);
     (fingerings, slot_notes)
 }
 

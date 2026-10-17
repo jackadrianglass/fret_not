@@ -4,7 +4,7 @@ use absolute::note::Note;
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::chunk_solver;
 use fretboard::fingering::Fingering;
-use fretboard::fretboard::{degree_at, degree_note, degrees_in_window};
+use fretboard::fretboard::{degree_at, degree_note, degrees_in_window, spelled_degree_at};
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::tuning;
@@ -110,14 +110,15 @@ fn label_of(label_mode: LabelMode, key: Key, mode: Mode, dr: DegreeReference) ->
     }
 }
 
-// Every playable position, split into in-key dots (labeled) and off-key
-// positions. Order is fixed — string, then fret.
+// Every playable position, split into in-key dots (labeled) and accidental
+// dots — off-key positions resolved to their spelled degree, labeled for
+// when they're played. Order is fixed — string, then fret.
 pub fn board(
     instrument: &Instrument,
     key: Key,
     mode: Mode,
     label_mode: LabelMode,
-) -> (Vec<Dot>, Vec<FretboardPosition>) {
+) -> (Vec<Dot>, Vec<Dot>) {
     let in_key: Vec<Dot> = degrees_in_window(instrument, key, mode, 0, instrument.max_fret())
         .into_iter()
         .map(|(position, degree)| Dot {
@@ -128,17 +129,23 @@ pub fn board(
         })
         .collect();
 
-    let mut off_key = Vec::new();
+    let mut accidentals = Vec::new();
     for string_index in 0..instrument.string_count() {
         for fret in 0..=instrument.fret_count(string_index) {
             let position = FretboardPosition { string_index, fret };
             if degree_at(instrument, key, mode, position).is_none() {
-                off_key.push(position);
+                let degree = spelled_degree_at(instrument, key, mode, position);
+                accidentals.push(Dot {
+                    position,
+                    label: label_of(label_mode, key, mode, degree),
+                    octave: degree.octave,
+                    is_root: false,
+                });
             }
         }
     }
 
-    (in_key, off_key)
+    (in_key, accidentals)
 }
 
 pub fn initial_chunk() -> Chunk {
@@ -260,5 +267,30 @@ mod tests {
             dot.octave, 4,
             "one octave count per cycle of 7 degrees above the tonic's register"
         );
+    }
+
+    #[test]
+    fn accidentals_carry_spelled_degree_labels() {
+        let instrument = instrument();
+        let key = key_of(TONICS[0], Quality::Major);
+        let eb4 = FretboardPosition {
+            string_index: 4,
+            fret: 4,
+        };
+
+        let (_, accidentals) = board(&instrument, key, Mode::Ionian, LabelMode::Degrees);
+        let dot = accidentals
+            .iter()
+            .find(|dot| dot.position == eb4)
+            .expect("Eb4 is off-key in C major");
+        assert_eq!(dot.label, "b3", "the spelled degree label");
+        assert_eq!(dot.octave, 4, "the key-referenced octave count");
+
+        let (_, accidentals) = board(&instrument, key, Mode::Ionian, LabelMode::Notes);
+        let dot = accidentals
+            .iter()
+            .find(|dot| dot.position == eb4)
+            .expect("Eb4 is off-key in C major");
+        assert_eq!(dot.label, "Eb4", "full SPN in note-name mode");
     }
 }

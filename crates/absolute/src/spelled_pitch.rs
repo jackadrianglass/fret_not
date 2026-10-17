@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::alteration::Alteration;
-use crate::letter::Letter;
+use crate::letter::{LETTERS, Letter};
 use crate::pitch_class::PitchClass;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -54,6 +54,28 @@ impl SpelledPitch {
     }
 }
 
+// The minimally spelled pitch sounding as [pitch_class]: the smallest
+// representable accidental wins, and flats win ties (Eb over D#). Panics
+// when no letter reaches the pitch class within double sharp/flat — every
+// chromatic pitch class has one.
+pub fn minimal_for(pitch_class: PitchClass) -> SpelledPitch {
+    LETTERS
+        .iter()
+        .filter_map(|letter| {
+            SpelledPitch::alteration_for(*letter, pitch_class)
+                .map(|alteration| SpelledPitch::new(*letter, alteration))
+        })
+        .min_by(|a, b| {
+            let a_semitones = a.alteration.semitones();
+            let b_semitones = b.alteration.semitones();
+            a_semitones
+                .abs()
+                .cmp(&b_semitones.abs())
+                .then(a_semitones.cmp(&b_semitones))
+        })
+        .unwrap_or_else(|| panic!("no letter spells pitch class {}", pitch_class))
+}
+
 impl fmt::Display for SpelledPitch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}", self.letter, self.alteration)
@@ -62,8 +84,22 @@ impl fmt::Display for SpelledPitch {
 
 #[cfg(test)]
 mod tests {
-    use super::{Alteration, Letter, SpelledPitch};
+    use super::{Alteration, Letter, SpelledPitch, minimal_for};
     use crate::pitch_class::PitchClass;
+
+    #[test]
+    fn minimal_for_prefers_the_smallest_accidental_with_flats_on_ties() {
+        assert_eq!(
+            vec![
+                minimal_for(PitchClass::from_int(0)).to_string(),
+                minimal_for(PitchClass::from_int(3)).to_string(),
+                minimal_for(PitchClass::from_int(1)).to_string(),
+                minimal_for(PitchClass::from_int(6)).to_string(),
+            ],
+            vec!["C", "Eb", "Db", "Gb"],
+            "naturals stay natural, ties go to the flat spelling"
+        );
+    }
 
     #[test]
     fn to_string_spells_the_accidental() {

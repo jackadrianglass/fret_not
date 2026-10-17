@@ -1,9 +1,8 @@
 use std::ops::Deref;
 
-use absolute::letter::{LETTERS, Letter};
+use absolute::letter::Letter;
 use absolute::note::Note;
-use absolute::pitch_class::PitchClass;
-use absolute::spelled_pitch::SpelledPitch;
+use absolute::spelled_pitch::minimal_for;
 
 // Open-string pitches from lowest to highest, as absolute SPN notes.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -41,24 +40,6 @@ pub fn semitone_at(tuning: &Tuning, string_index: usize, fret: i32) -> i32 {
     open_semitone(tuning, string_index) + fret
 }
 
-fn spelled_pitch_of_pitch_class(pitch_class: PitchClass) -> SpelledPitch {
-    LETTERS
-        .iter()
-        .filter_map(|letter| {
-            SpelledPitch::alteration_for(*letter, pitch_class)
-                .map(|alteration| SpelledPitch::new(*letter, alteration))
-        })
-        .min_by(|a, b| {
-            let a_semitones = a.alteration.semitones();
-            let b_semitones = b.alteration.semitones();
-            a_semitones
-                .abs()
-                .cmp(&b_semitones.abs())
-                .then(a_semitones.cmp(&b_semitones))
-        })
-        .unwrap_or_else(|| panic!("no accidental spells pitch class {}", pitch_class))
-}
-
 // Shift one string's open note by semitones, spelling the result with the
 // smallest accidental available. Drop tunings derive from [standard].
 pub fn retune_string(tuning: &Tuning, string_index: usize, semitones: i32) -> Tuning {
@@ -67,8 +48,7 @@ pub fn retune_string(tuning: &Tuning, string_index: usize, semitones: i32) -> Tu
         .enumerate()
         .map(|(i, note)| {
             if i == string_index {
-                let pitch_class = note.pitch_class() + semitones;
-                let spelled = spelled_pitch_of_pitch_class(pitch_class);
+                let spelled = minimal_for(note.pitch_class() + semitones);
                 Note::new(
                     spelled,
                     (note.semitone() + semitones - spelled.semitone()) / 12 - 1,

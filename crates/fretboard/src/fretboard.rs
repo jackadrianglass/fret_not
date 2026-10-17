@@ -1,5 +1,7 @@
+use absolute::alteration::Alteration;
 use absolute::note::Note;
 use absolute::pitch_class::PitchClass;
+use absolute::spelled_pitch;
 use relative::degree_reference::DegreeReference;
 use relative::key::Key;
 use relative::mode::Mode;
@@ -70,6 +72,40 @@ pub fn degree_at(
     })
 }
 
+// Every position resolves: in-key positions match [degree_at] exactly; an
+// off-key position resolves to the degree its minimally spelled letter
+// names, with the alteration reaching the sounded pitch from the key's own
+// degree (Eb in C major is the flat 3; an A in F# major is the flat 3 too).
+// Panics when that alteration would need beyond a double flat/sharp — no
+// diatonic key requires one.
+pub fn spelled_degree_at(
+    instrument: &Instrument,
+    key: Key,
+    mode: Mode,
+    position: FretboardPosition,
+) -> DegreeReference {
+    let position_semitone = instrument.semitone_at(position);
+    let pitch_class = PitchClass::from_int(position_semitone);
+    let letter = spelled_pitch::minimal_for(pitch_class).letter;
+    let degree = (1..=7)
+        .find(|&degree| ScaleDegree::natural(degree).spelled(key.tonic, mode).letter == letter)
+        .expect("every letter names exactly one degree of a diatonic key");
+    let key_pitch_class = key.mode_pitch_classes(mode)[(degree - 1) as usize];
+    let mut delta = (i32::from(pitch_class) - i32::from(key_pitch_class)).rem_euclid(12);
+    if delta > 6 {
+        delta -= 12;
+    }
+    let alteration = Alteration::from_semitones(delta)
+        .expect("diatonic keys keep every pitch within a double accidental");
+    let base = DegreeReference::natural(degree, 0).interval(key.tonic_pitch_class(), mode);
+    let octave =
+        (position_semitone - root_note(key).semitone() - base - alteration.semitones()) / 12;
+    DegreeReference {
+        scale_degree: ScaleDegree::new(degree, alteration),
+        octave,
+    }
+}
+
 // Every playable in-key position with its degree, ascending by string then
 // fret.
 pub fn degrees_in_window(
@@ -95,15 +131,17 @@ pub fn degrees_in_window(
 
 #[cfg(test)]
 mod tests {
-    use super::{degree_at, degree_positions, degrees_in_window};
+    use super::{degree_at, degree_positions, degrees_in_window, spelled_degree_at};
     use crate::fretboard_position::FretboardPosition;
     use crate::instrument::Instrument;
     use crate::tuning;
+    use absolute::alteration::Alteration;
     use absolute::letter::Letter;
     use absolute::spelled_pitch::SpelledPitch;
     use relative::degree_reference::DegreeReference;
     use relative::key::{Key, Quality};
     use relative::mode::Mode;
+    use relative::scale_degree::ScaleDegree;
 
     fn c_major() -> Key {
         Key::new(SpelledPitch::natural(Letter::C), Quality::Major)
@@ -186,6 +224,57 @@ mod tests {
         assert!(
             degree_at(&instrument(), c_major(), ionian(), chromatic_position).is_none(),
             "Bb on the low E string is off key in C major"
+        );
+    }
+
+    #[test]
+    fn spelled_degree_at_matches_degree_at_in_key() {
+        for (degree, octave) in [(1, 3), (3, 3), (5, 3), (7, 2), (4, 4)] {
+            let dr = DegreeReference::natural(degree, octave);
+            for position in degree_positions(&instrument(), c_major(), ionian(), dr) {
+                assert_eq!(
+                    Some(spelled_degree_at(
+                        &instrument(),
+                        c_major(),
+                        ionian(),
+                        position
+                    )),
+                    degree_at(&instrument(), c_major(), ionian(), position),
+                    "in-key positions resolve identically at degree {} octave {}",
+                    degree,
+                    octave
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn spelled_degree_at_resolves_off_key_positions_to_altered_degrees() {
+        assert_eq!(
+            spelled_degree_at(
+                &instrument(),
+                c_major(),
+                ionian(),
+                FretboardPosition {
+                    string_index: 4,
+                    fret: 4
+                }
+            ),
+            DegreeReference::new(ScaleDegree::new(3, Alteration::Flat), 4),
+            "Eb4 on the B string is the flat 3 at octave 4"
+        );
+        assert_eq!(
+            spelled_degree_at(
+                &instrument(),
+                c_major(),
+                ionian(),
+                FretboardPosition {
+                    string_index: 0,
+                    fret: 6
+                }
+            ),
+            DegreeReference::new(ScaleDegree::new(7, Alteration::Flat), 2),
+            "Bb2 on the low E string is the flat 7 at octave 2"
         );
     }
 

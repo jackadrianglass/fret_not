@@ -39,7 +39,10 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
     dropdown). Degree labels additionally carry the key-referenced octave
     count as a small subscript beside the number — one count per cycle of 7
     degrees above the tonic's register.
-  - Off-key positions: hollow light-gray circle, no label.
+  - Off-key positions: faint hollow light-gray rings, unlabeled — the key's
+    labeled dots stay the primary display. When a chunk plays an off-key
+    position it emphasizes like any note, labeled with its spelled degree
+    ("b3" plus the octave-count subscript) or full SPN ("Eb4").
 
 ## Chunk editing page
 
@@ -53,10 +56,12 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   cells in the accent color; the selected slot has a cursor outline. Click a
   cell to select it. Note cells also show the resolved SPN note name in the
   register the chunk currently sits in.
-- Board clicks write the selected slot: an in-key position stores its degree
-  with the octave counted from the anchor note; an off-key click clears the
-  slot to a rest. Each write steps the cursor right, appending a rest at the
-  end of the chunk (bounded by the max-slot count). Writing or rewriting the
+- Board clicks write the selected slot: every position resolves — in-key
+  positions store their degree, off-key positions store their spelled
+  accidental (a "b3", a "#4") — with the octave counted from the anchor
+  note. Rests are authored by the rest toggle, not by clicks. Each write
+  steps the cursor right, appending a rest at the end of the chunk
+  (bounded by the max-slot count). Writing or rewriting the
   anchor note (the chunk's first note) moves the octave reference, shifting
   the other notes to keep their sounding pitches; removing it re-references
   to the next note. Displayed positions are remembered per chunk (keyed with
@@ -71,8 +76,10 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   exactly where the user placed it — string and fret — with the rest of the
   notes enumerated within the chunk's fret cap around it. The catalog is
   stable while rotating; the cap grows only when the user's own input is
-  wider than it admits, never from a swap. A never-placed chunk enumerates
-  around the default window so its slots can fill.
+  wider than it admits, never from a swap. A never-placed chunk's root
+  note takes a default starting position — the nearest playable position
+  sounding it — and the catalog pins there from the first refresh, so the
+  count never collapses after a rotation.
 - "+" button after the last cell appends a rest (bounded by a max-slot count);
   "-" removes the selected slot (cursor moves left, or to 0 at the left edge).
 - Inspector row below the strip: Note/Rest toggle, degree dropdown (1–7),

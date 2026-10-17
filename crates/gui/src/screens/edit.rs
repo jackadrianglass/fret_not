@@ -4,8 +4,9 @@ use absolute::spelled_pitch::SpelledPitch;
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Element, Fill};
 
+use fretboard::chunk_solver;
 use fretboard::fingering::{self, Fingering};
-use fretboard::fretboard::degree_at;
+use fretboard::fretboard::{degree_at, spelled_degree_at};
 use fretboard::fretboard_position::FretboardPosition;
 use relative::chunk::{self, Chunk, Slot};
 use relative::degree_reference::DegreeReference;
@@ -147,32 +148,39 @@ impl EditScreen {
         // admits — swapped-in fingerings are always within it, so the
         // rotation catalog stays fixed.
         edit.cap = edit.cap.max(displayed_fret_span(edit, chunk));
-        let anchor_position =
-            anchor_index(chunk).and_then(|i| edit.positions.get(i).copied().flatten());
-        let (solved, slot_notes) = match anchor_position {
-            // The root note is pinned where the user placed it: the catalog
-            // holds every fingering that keeps it there.
-            Some(first) => model::solve_pinned(
-                &session.instrument,
-                session.key(),
-                session.mode(),
-                chunk,
-                1,
-                first,
-                edit.cap,
-            ),
-            // Nothing placed yet — enumerate around the default window so
-            // never-placed slots can fill.
-            None => model::solve(
-                &session.instrument,
-                session.key(),
-                session.mode(),
-                chunk,
-                1,
-                model::SOLVER_ANCHOR,
-                edit.cap,
-            ),
-        };
+        let mut solved = Vec::new();
+        let mut slot_notes = vec![None; chunk.len()];
+        if let Some(i) = anchor_index(chunk)
+            && let Slot::Note(dr) = chunk[i]
+        {
+            // The root note's pin: where the user placed it, or — never
+            // placed yet — its default starting position, the nearest
+            // playable position sounding it. The catalog pins to either
+            // from the first refresh, so the stepper count never collapses
+            // after a rotation.
+            let first = edit.positions.get(i).copied().flatten().or_else(|| {
+                chunk_solver::starting_position(
+                    session.key(),
+                    session.mode(),
+                    &session.instrument,
+                    dr,
+                    model::SOLVER_ANCHOR,
+                )
+            });
+            if let Some(first) = first {
+                let (fingerings, notes) = model::solve_pinned(
+                    &session.instrument,
+                    session.key(),
+                    session.mode(),
+                    chunk,
+                    1,
+                    first,
+                    edit.cap,
+                );
+                solved = fingerings;
+                slot_notes = notes;
+            }
+        }
         self.solved = solved;
         self.slot_notes = slot_notes;
         // A note slot without a position takes one from the best current
@@ -279,13 +287,14 @@ impl EditScreen {
     }
 }
 
-// A click writes the selected slot and steps the cursor. degree_at is
-// key-anchored; the slot stores it relative to the anchor note — the
-// chunk's first note, the register the octaves count from. Writing the
-// anchor note moves the reference (the other notes shift to keep their
-// sounding pitches); any other note stores its register distance from it.
-// The clicked position becomes the slot's display position — it sticks
-// until the user touches the slot again.
+// A click writes the selected slot and steps the cursor. Every position
+// resolves through spelled_degree_at — in-key or accidental — and stores
+// relative to the anchor note: the chunk's first note, the register the
+// octaves count from. Writing the anchor note moves the reference (the
+// other notes shift to keep their sounding pitches); any other note stores
+// its register distance from it. The clicked position becomes the slot's
+// display position — it sticks until the user touches the slot again.
+// Rests are authored by the rest toggle, not by clicks.
 fn write_position(
     screen: &mut EditScreen,
     session: &Session,
@@ -297,7 +306,7 @@ fn write_position(
         return false;
     }
     let index = screen.slot.min(chunk.len() - 1);
-    let clicked = degree_at(&session.instrument, session.key(), session.mode(), position);
+    let clicked = spelled_degree_at(&session.instrument, session.key(), session.mode(), position);
     screen
         .edits
         .entry(document.selected_chunk)
@@ -307,36 +316,36 @@ fn write_position(
             positions: vec![None; chunk.len()],
         });
     let edit = screen.edits.get_mut(&document.selected_chunk).unwrap();
-    let slot = match clicked {
-        Some(dr) => {
-            // The write lands on the anchor when it writes the chunk's first
-            // note — at, before, or into a note-less chunk.
-            let writes_anchor = match anchor_index(chunk) {
-                Some(anchor) => index <= anchor,
-                None => true,
-            };
-            let slot = match edit.base {
-                Some(base) if !writes_anchor => Slot::Note(DegreeReference {
-                    octave: dr.octave - base,
-                    ..dr
-                }),
-                Some(base) => {
-                    chunk::shift_octaves(chunk, base - dr.octave);
-                    edit.base = Some(dr.octave);
-                    Slot::Note(DegreeReference { octave: 0, ..dr })
-                }
-                None => {
-                    edit.base = Some(dr.octave);
-                    Slot::Note(DegreeReference { octave: 0, ..dr })
-                }
-            };
-            edit.positions[index] = Some(position);
-            slot
-        }
-        None => {
-            edit.positions[index] = None;
-            Slot::Rest
-        }
+    let slot = {
+        // The write lands on the anchor when it writes the chunk's first
+        // note — at, before, or into a note-less chunk.
+        let writes_anchor = match anchor_index(chunk) {
+            Some(anchor) => index <= anchor,
+            None => true,
+        };
+        let slot = match edit.base {
+            Some(base) if !writes_anchor => Slot::Note(DegreeReference {
+                octave: clicked.octave - base,
+                ..clicked
+            }),
+            Some(base) => {
+                chunk::shift_octaves(chunk, base - clicked.octave);
+                edit.base = Some(clicked.octave);
+                Slot::Note(DegreeReference {
+                    octave: 0,
+                    ..clicked
+                })
+            }
+            None => {
+                edit.base = Some(clicked.octave);
+                Slot::Note(DegreeReference {
+                    octave: 0,
+                    ..clicked
+                })
+            }
+        };
+        edit.positions[index] = Some(position);
+        slot
     };
     chunk::set(chunk, index, slot);
     if index + 1 < chunk.len() {
@@ -492,6 +501,8 @@ fn slot_band<'a>(
 mod tests {
     use super::*;
     use crate::model;
+    use absolute::alteration::Alteration;
+    use relative::scale_degree::ScaleDegree;
 
     fn session() -> Session {
         Session {
@@ -592,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn an_off_key_click_writes_a_rest_and_advances_the_cursor() {
+    fn an_off_key_click_writes_the_accidental() {
         let session = session();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
@@ -602,12 +613,17 @@ mod tests {
 
         assert_eq!(screen.slot, 1, "the cursor steps right");
         assert_eq!(
-            document.chunks[0]
-                .iter()
-                .map(|slot| octave_of(*slot))
-                .collect::<Vec<_>>(),
-            vec![None, None],
-            "Bb on the low E string is off-key in C major: the slot becomes a rest"
+            document.chunks[0][0],
+            Slot::Note(DegreeReference::new(
+                ScaleDegree::new(7, Alteration::Flat),
+                0
+            )),
+            "Bb2 on the low E string writes the flat 7 at the anchor register"
+        );
+        assert_eq!(
+            screen.positions,
+            Fingering::new(vec![pos(0, 6)]),
+            "the accidental displays where it was clicked"
         );
 
         click(&mut screen, &session, &mut document, pos(0, 0));
@@ -615,7 +631,35 @@ mod tests {
         assert_eq!(
             octave_of(document.chunks[0][1]),
             Some(0),
-            "the first in-key note establishes the base at octave 0"
+            "an in-key note after the accidental still counts from the same base"
+        );
+        assert_eq!(
+            screen.edits[&0].base,
+            Some(2),
+            "the accidental's register anchored the chunk"
+        );
+    }
+
+    #[test]
+    fn rests_stay_authored_by_the_toggle() {
+        let session = session();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document);
+
+        click(&mut screen, &session, &mut document, pos(0, 0));
+        assert!(matches!(document.chunks[0][0], Slot::Note(_)));
+
+        screen.update(Message::SlotSelected(0), &session, &mut document);
+        screen.update(Message::ToggleRest, &session, &mut document);
+        screen.refresh(&session, &document);
+        assert!(
+            matches!(document.chunks[0][0], Slot::Rest),
+            "the toggle still converts a note into a rest"
+        );
+        assert_eq!(
+            screen.edits[&0].positions[0], None,
+            "the rest clears the slot's display position"
         );
     }
 
@@ -769,6 +813,43 @@ mod tests {
             screen.solved.first(),
             Some(&screen.positions),
             "the solve would have re-voiced slot 1 — the fill must not follow it"
+        );
+    }
+
+    #[test]
+    fn a_never_placed_chunk_pins_to_its_starting_position() {
+        let session = session();
+        let mut document = Document {
+            chunks: vec![model::second_chunk()],
+            selected_chunk: 0,
+            steps: Vec::new(),
+        };
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document);
+
+        let first = screen
+            .positions
+            .first()
+            .copied()
+            .expect("the chunk fills on the first refresh");
+        assert!(
+            screen
+                .solved
+                .iter()
+                .all(|fingering| fingering.first() == Some(&first)),
+            "the catalog pins to the starting position from the first refresh"
+        );
+        assert_eq!(
+            screen.fingering_index,
+            Some(0),
+            "the fill is the catalog's best fingering"
+        );
+
+        let catalog = screen.solved.clone();
+        screen.refresh(&session, &document);
+        assert_eq!(
+            screen.solved, catalog,
+            "no pivot: a redundant refresh keeps the catalog"
         );
     }
 

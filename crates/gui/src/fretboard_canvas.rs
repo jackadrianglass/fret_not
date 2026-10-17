@@ -28,6 +28,9 @@ pub struct Visual {
     // The key-referenced octave count, drawn as a small subscript beside
     // the degree label — one count per cycle of 7 degrees.
     pub octave: Option<i32>,
+    // An off-key position: a faint hollow ring until played, labeled with
+    // its spelled degree when emphasized.
+    pub accidental: bool,
     pub root_halo: bool,
     pub selected: bool,
     pub emphasized: bool,
@@ -285,6 +288,18 @@ impl FretboardCanvas {
         let path = canvas::Path::circle(center, radius);
 
         if !v.emphasized {
+            if v.accidental {
+                // The chromatic field as a whisper: a faint hollow ring,
+                // unlabeled, keeping the key's labeled dots the primary
+                // display.
+                frame.stroke(
+                    &path,
+                    canvas::Stroke::default()
+                        .with_color(c.fret_line)
+                        .with_width(1.0),
+                );
+                return;
+            }
             // A solid fill masks the string under the dot, so the label
             // never has a line striking through it.
             frame.fill(&path, c.background);

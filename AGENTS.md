@@ -137,6 +137,9 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            enumerator, shared with the solver), degree_positions()
                            (degree → positions, instrument-clamped), degree_at()
                            (position → Option<DegreeReference>, None off-key),
+                           spelled_degree_at() (the total form: every position
+                           resolves, off-key ones as altered degrees — Eb in C
+                           major is b3; in-key results match degree_at),
                            degrees_in_window() (every in-key playable position WITH
                            its degree). root_note() is the octave register all
                            resolution here is anchored to; degree_at round-trips
@@ -155,8 +158,10 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
   chunk_solver.rs          positions() — every fingering of a chunk, ranked by reach
                            distance from a start anchor; positions_from() — the
                            same with the first note pinned to an exact position
-                           (the edit screen's rotation catalog). CRITICAL
-                           invariant: resolve each note's absolute semitone (via
+                           (the edit screen's rotation catalog);
+                           starting_position() — the nearest playable position
+                           sounding a note (a never-placed root's default).
+                           CRITICAL invariant: resolve each note's absolute semitone (via
                            Fretboard::degree_note) FIRST, then choose only
                            *which string* — the comment at the call site says
                            why. The first note's octave window is derived from
@@ -205,8 +210,9 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
                            glyphs, horizontally scrollable); the board follows the
                            selected step
   model.rs                 view-state glue only: TONICS const + typed pick_list
-                           payloads, board assembly over degrees_in_window, solve
-                           wiring, seed chunks/steps, chunk letters, romans —
+                           payloads, board assembly over degrees_in_window +
+                           spelled_degree_at (in-key dots and accidental dots),
+                           solve wiring, seed chunks/steps, chunk letters, romans —
                            music knowledge stays in the core crates
   fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; paints
                            from theme-derived CanvasColors, no state, no animation —

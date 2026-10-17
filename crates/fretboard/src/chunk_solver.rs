@@ -100,6 +100,24 @@ fn chain(
     }
 }
 
+// The playable position sounding [note] nearest to [near], by reach — the
+// default placement for a root note that has never been placed. Ties keep
+// enumeration order: octave ascending, then string ascending.
+pub fn starting_position(
+    key: Key,
+    mode: Mode,
+    instrument: &Instrument,
+    note: DegreeReference,
+    near: FretboardPosition,
+) -> Option<FretboardPosition> {
+    first_note_octaves(instrument, key, mode, note)
+        .into_iter()
+        .flat_map(|octave| {
+            fretboard::degree_positions(instrument, key, mode, DegreeReference { octave, ..note })
+        })
+        .min_by_key(|position| fingering::distance(*position, near))
+}
+
 // Every fingering continuing from [origin], which already voices [first]:
 // the rest chain at the register offset [origin] implies, prepended with
 // [origin] itself.
@@ -204,7 +222,7 @@ pub fn positions_from(
 
 #[cfg(test)]
 mod tests {
-    use super::{positions, positions_from};
+    use super::{positions, positions_from, starting_position};
     use crate::fingering::{Fingering, distance};
     use crate::fretboard_position::FretboardPosition;
     use crate::instrument::Instrument;
@@ -409,6 +427,29 @@ mod tests {
             intervals_of(&shapes[0]),
             vec![12],
             "a full octave, ascending"
+        );
+    }
+
+    #[test]
+    fn starting_position_picks_the_nearest_sounding_position() {
+        // The C major tonic, nearest the low E's 5th fret: C3 at fret 8
+        // ties with the A string's 3rd fret; enumeration order wins.
+        assert_eq!(
+            starting_position(
+                c_major(),
+                Mode::Ionian,
+                &instrument(),
+                natural_degrees(&[(1, 0)])[0],
+                FretboardPosition {
+                    string_index: 0,
+                    fret: 5
+                },
+            ),
+            Some(FretboardPosition {
+                string_index: 0,
+                fret: 8
+            }),
+            "the nearest playable position sounding the note"
         );
     }
 

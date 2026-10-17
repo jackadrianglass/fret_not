@@ -27,6 +27,9 @@ pub struct Highlight {
 
 pub struct BoardState {
     dots: Vec<Dot>,
+    // Off-key positions resolved to their spelled degrees — drawn as faint
+    // hollow rings until the chunk plays them, then labeled.
+    accidentals: Vec<Dot>,
     string_count: usize,
     max_fret: i32,
     // The open-note SPN label naming each drawn row's string.
@@ -36,12 +39,13 @@ pub struct BoardState {
 
 impl BoardState {
     pub fn new(instrument: &Instrument, key: Key, mode: Mode, label_mode: LabelMode) -> BoardState {
-        let (dots, _off_key) = model::board(instrument, key, mode, label_mode);
+        let (dots, accidentals) = model::board(instrument, key, mode, label_mode);
         let open_notes = (0..instrument.string_count())
             .map(|string_index| tuning::open_note(&instrument.tuning, string_index).to_string())
             .collect();
         BoardState {
             dots,
+            accidentals,
             string_count: instrument.string_count(),
             max_fret: instrument.max_fret(),
             open_notes,
@@ -49,22 +53,32 @@ impl BoardState {
         }
     }
 
+    fn visual(dot: &Dot, accidental: bool, label_mode: LabelMode, highlight: &Highlight) -> Visual {
+        Visual {
+            position: dot.position,
+            label: Some(dot.label.clone()),
+            // The subscript octave count rides along on degree labels;
+            // note-name labels already carry the octave in SPN.
+            octave: match label_mode {
+                LabelMode::Degrees => Some(dot.octave),
+                LabelMode::Notes => None,
+            },
+            accidental,
+            root_halo: dot.is_root,
+            selected: highlight.selected == Some(dot.position),
+            emphasized: highlight.positions.contains(&dot.position),
+        }
+    }
+
     fn visuals(&self, highlight: &Highlight) -> Vec<Visual> {
         self.dots
             .iter()
-            .map(|dot| Visual {
-                position: dot.position,
-                label: Some(dot.label.clone()),
-                // The subscript octave count rides along on degree labels;
-                // note-name labels already carry the octave in SPN.
-                octave: match self.label_mode {
-                    LabelMode::Degrees => Some(dot.octave),
-                    LabelMode::Notes => None,
-                },
-                root_halo: dot.is_root,
-                selected: highlight.selected == Some(dot.position),
-                emphasized: highlight.positions.contains(&dot.position),
-            })
+            .map(|dot| Self::visual(dot, false, self.label_mode, highlight))
+            .chain(
+                self.accidentals
+                    .iter()
+                    .map(|dot| Self::visual(dot, true, self.label_mode, highlight)),
+            )
             .collect()
     }
 }

@@ -6,7 +6,7 @@ use fretboard::tuning;
 
 use crate::board::{self, BoardState, Highlight};
 use crate::model;
-use crate::{Document, Session};
+use crate::{Document, Session, Settings};
 
 pub struct TabScreen {
     chord_index: usize,
@@ -34,7 +34,7 @@ impl TabScreen {
         }
     }
 
-    pub fn refresh(&mut self, session: &Session, document: &Document) {
+    pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
         let chunk = &document.chunks[document.selected_chunk];
         let (solved, slot_notes) = model::solve(
             &session.instrument,
@@ -43,7 +43,7 @@ impl TabScreen {
             chunk,
             model::PROGRESSION[self.chord_index],
             model::SOLVER_ANCHOR,
-            model::SOLVER_FRET_CAP,
+            settings.solver_fret_cap,
         );
         self.solved = solved;
         self.slot_notes = slot_notes;
@@ -95,6 +95,7 @@ pub fn view<'a>(
     session: &'a Session,
     document: &'a Document,
     board: &'a BoardState,
+    settings: &'a Settings,
 ) -> Element<'a, Message> {
     let chunk = &document.chunks[document.selected_chunk];
     let fingering = screen
@@ -144,7 +145,12 @@ pub fn view<'a>(
     let tab = column(
         lines
             .into_iter()
-            .map(|line| text(line).font(Font::MONOSPACE).size(16.0).into())
+            .map(|line| {
+                text(line)
+                    .font(Font::MONOSPACE)
+                    .size(settings.scale(16.0))
+                    .into()
+            })
             .collect::<Vec<Element<'_, Message>>>(),
     );
 
@@ -156,6 +162,7 @@ pub fn view<'a>(
                 positions: fingering,
                 selected: None,
             },
+            settings,
         )
         .map(Message::Board),
     )

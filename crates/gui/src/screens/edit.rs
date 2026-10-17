@@ -8,6 +8,7 @@ use fretboard::chunk_solver;
 use fretboard::fingering::{self, Fingering};
 use fretboard::fretboard::{degree_at, spelled_degree_at};
 use fretboard::fretboard_position::FretboardPosition;
+use fretboard::instrument::Instrument;
 use relative::chunk::{self, Chunk, Slot};
 use relative::degree_reference::DegreeReference;
 use relative::key::Quality;
@@ -15,7 +16,7 @@ use relative::key::Quality;
 use crate::board::{self, BoardState, Highlight};
 use crate::colors;
 use crate::model;
-use crate::{Document, Session, outlined};
+use crate::{Document, Session, Settings, outlined};
 
 const BOARD_HEIGHT: f32 = 260.0;
 
@@ -51,8 +52,10 @@ pub struct EditScreen {
     // index, re-derived in refresh from [positions].
     fingering_index: Option<usize>,
     // The chunk + session the caches were derived against; a change resets
-    // the cursor and, on a key change, the click history.
-    anchored: Option<(usize, SpelledPitch, Quality)>,
+    // the cursor and, on a key or instrument change, the click history —
+    // stored positions are instrument-relative, so a new instrument
+    // invalidates them exactly like a new key.
+    anchored: Option<(usize, Instrument, SpelledPitch, Quality)>,
 }
 
 // The index of the chunk's first note — the anchor note its octaves count
@@ -123,13 +126,25 @@ impl EditScreen {
             .and_then(|edit| edit.base)
     }
 
-    pub fn refresh(&mut self, session: &Session, document: &Document) {
-        let anchored = (document.selected_chunk, session.tonic, session.quality);
-        if self.anchored != Some(anchored) {
-            // A key change invalidates every chunk's click history; a chunk
-            // switch keeps the per-chunk edits.
-            let (_, tonic, quality) = self.anchored.unwrap_or(anchored);
-            if (tonic, quality) != (session.tonic, session.quality) {
+    pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
+        let anchored = (
+            document.selected_chunk,
+            session.instrument.clone(),
+            session.tonic,
+            session.quality,
+        );
+        if self.anchored != Some(anchored.clone()) {
+            // A key or instrument change invalidates every chunk's click
+            // history; a chunk switch keeps the per-chunk edits.
+            let stale = match &self.anchored {
+                Some((_, instrument, tonic, quality)) => {
+                    *instrument != session.instrument
+                        || *tonic != session.tonic
+                        || *quality != session.quality
+                }
+                None => false,
+            };
+            if stale {
                 self.edits.clear();
             }
             self.anchored = Some(anchored);
@@ -141,13 +156,18 @@ impl EditScreen {
             .entry(document.selected_chunk)
             .or_insert_with(|| ChunkEdit {
                 base: None,
-                cap: model::SOLVER_FRET_CAP,
+                cap: settings.solver_fret_cap,
                 positions: vec![None; chunk.len()],
             });
         // The cap grows only when the user places a wider move than it
         // admits — swapped-in fingerings are always within it, so the
-        // rotation catalog stays fixed.
-        edit.cap = edit.cap.max(displayed_fret_span(edit, chunk));
+        // rotation catalog stays fixed. The setting is the base: a raised
+        // cap lifts every chunk, a lowered one only reaches chunks that
+        // have not grown past it.
+        edit.cap = edit
+            .cap
+            .max(settings.solver_fret_cap)
+            .max(displayed_fret_span(edit, chunk));
         let mut solved = Vec::new();
         let mut slot_notes = vec![None; chunk.len()];
         if let Some(i) = anchor_index(chunk)
@@ -227,10 +247,16 @@ impl EditScreen {
     }
 
     // True when the document changed and the other screens' caches are stale.
-    pub fn update(&mut self, message: Message, session: &Session, document: &mut Document) -> bool {
+    pub fn update(
+        &mut self,
+        message: Message,
+        session: &Session,
+        document: &mut Document,
+        settings: &Settings,
+    ) -> bool {
         match message {
             Message::Board(board::Event::Clicked(position)) => {
-                write_position(self, session, document, position)
+                write_position(self, session, document, settings, position)
             }
             Message::SlotSelected(index) => {
                 let len = document.chunks[document.selected_chunk].len();
@@ -299,6 +325,7 @@ fn write_position(
     screen: &mut EditScreen,
     session: &Session,
     document: &mut Document,
+    settings: &Settings,
     position: FretboardPosition,
 ) -> bool {
     let chunk = &mut document.chunks[document.selected_chunk];
@@ -312,7 +339,7 @@ fn write_position(
         .entry(document.selected_chunk)
         .or_insert_with(|| ChunkEdit {
             base: None,
-            cap: model::SOLVER_FRET_CAP,
+            cap: settings.solver_fret_cap,
             positions: vec![None; chunk.len()],
         });
     let edit = screen.edits.get_mut(&document.selected_chunk).unwrap();
@@ -385,6 +412,7 @@ pub fn view<'a>(
     session: &'a Session,
     document: &'a Document,
     board: &'a BoardState,
+    settings: &'a Settings,
 ) -> Element<'a, Message> {
     let chunk = &document.chunks[document.selected_chunk];
     let base = screen.base(document);
@@ -395,14 +423,15 @@ pub fn view<'a>(
             "{}/{}",
             screen.fingering_index.map(|i| i + 1).unwrap_or(0),
             screen.solved.len()
-        )),
+        ))
+        .size(settings.scale(16.0)),
         button("next").on_press(Message::FingeringNext),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
 
     let band = container(
-        column![slot_band(screen, session, base, chunk), stepper]
+        column![slot_band(screen, session, base, chunk, settings), stepper]
             .spacing(8)
             .align_x(Alignment::Center),
     )
@@ -418,6 +447,7 @@ pub fn view<'a>(
                 selected: selected_slot_position(screen, document),
                 positions: screen.positions.clone(),
             },
+            settings,
         )
         .map(Message::Board),
     )
@@ -460,6 +490,7 @@ fn slot_band<'a>(
     session: &'a Session,
     base: Option<i32>,
     chunk: &'a Chunk,
+    settings: &'a Settings,
 ) -> Element<'a, Message> {
     let mut band = row![].spacing(6).align_y(Alignment::Center);
 
@@ -475,13 +506,15 @@ fn slot_band<'a>(
                     None => String::new(),
                 };
                 column![
-                    text(model::slot_label(*dr)).size(16.0).style(accent),
-                    text(name).size(11.0).style(secondary),
+                    text(model::slot_label(*dr))
+                        .size(settings.scale(16.0))
+                        .style(accent),
+                    text(name).size(settings.scale(11.0)).style(secondary),
                 ]
             }
             Slot::Rest => column![
-                text(".").size(16.0).style(secondary),
-                text("rest").size(11.0).style(secondary)
+                text(".").size(settings.scale(16.0)).style(secondary),
+                text("rest").size(settings.scale(11.0)).style(secondary)
             ],
         };
         band = band.push(
@@ -509,8 +542,11 @@ mod tests {
             instrument: model::instrument(),
             tonic: model::TONICS[0],
             quality: Quality::Major,
-            label_mode: model::LabelMode::Degrees,
         }
+    }
+
+    fn settings() -> Settings {
+        Settings::default()
     }
 
     fn rests_document(slots: usize) -> Document {
@@ -537,25 +573,28 @@ mod tests {
         screen: &mut EditScreen,
         session: &Session,
         document: &mut Document,
+        settings: &Settings,
         position: FretboardPosition,
     ) {
         screen.update(
             Message::Board(board::Event::Clicked(position)),
             session,
             document,
+            settings,
         );
-        screen.refresh(session, document);
+        screen.refresh(session, document, settings);
     }
 
     #[test]
     fn the_same_degree_an_octave_apart_stores_distinct_octaves() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        click(&mut screen, &session, &mut document, pos(0, 12));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
 
         assert_eq!(
             document.chunks[0]
@@ -575,12 +614,13 @@ mod tests {
     #[test]
     fn a_click_below_the_anchor_stores_a_negative_octave() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 12));
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
             document.chunks[0]
@@ -605,11 +645,12 @@ mod tests {
     #[test]
     fn an_off_key_click_writes_the_accidental() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 6));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 6));
 
         assert_eq!(screen.slot, 1, "the cursor steps right");
         assert_eq!(
@@ -626,7 +667,7 @@ mod tests {
             "the accidental displays where it was clicked"
         );
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
             octave_of(document.chunks[0][1]),
@@ -643,16 +684,17 @@ mod tests {
     #[test]
     fn rests_stay_authored_by_the_toggle() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         assert!(matches!(document.chunks[0][0], Slot::Note(_)));
 
-        screen.update(Message::SlotSelected(0), &session, &mut document);
-        screen.update(Message::ToggleRest, &session, &mut document);
-        screen.refresh(&session, &document);
+        screen.update(Message::SlotSelected(0), &session, &mut document, &settings);
+        screen.update(Message::ToggleRest, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
         assert!(
             matches!(document.chunks[0][0], Slot::Rest),
             "the toggle still converts a note into a rest"
@@ -666,12 +708,13 @@ mod tests {
     #[test]
     fn writing_past_the_end_appends_up_to_the_slot_cap() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(model::MAX_SLOTS);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
         for _ in 0..(model::MAX_SLOTS + 3) {
-            click(&mut screen, &session, &mut document, pos(0, 0));
+            click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         }
 
         assert_eq!(
@@ -695,19 +738,20 @@ mod tests {
     #[test]
     fn switching_chunks_resets_the_cursor_and_rederives_the_base() {
         let session = session();
+        let settings = settings();
         let mut document = Document {
             chunks: vec![Chunk::new(vec![Slot::Rest]), model::second_chunk()],
             selected_chunk: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         assert_eq!(screen.slot, 1);
 
         document.selected_chunk = 1;
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
         assert_eq!(screen.slot, 0, "the cursor resets on a chunk switch");
         assert!(
@@ -719,12 +763,13 @@ mod tests {
     #[test]
     fn authored_clicks_beat_the_solve_where_they_disagree() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        click(&mut screen, &session, &mut document, pos(4, 6));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(4, 6));
 
         assert_eq!(
             screen.solved.first(),
@@ -746,14 +791,15 @@ mod tests {
     #[test]
     fn rewriting_the_anchor_note_moves_the_octave_reference() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 12));
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        screen.update(Message::SlotSelected(0), &session, &mut document);
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        screen.update(Message::SlotSelected(0), &session, &mut document, &settings);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
             document.chunks[0]
@@ -769,15 +815,16 @@ mod tests {
     #[test]
     fn removing_the_anchor_rebases_to_the_new_first_note() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 12));
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        screen.update(Message::SlotSelected(0), &session, &mut document);
-        screen.update(Message::RemoveSlot, &session, &mut document);
-        screen.refresh(&session, &document);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        screen.update(Message::SlotSelected(0), &session, &mut document, &settings);
+        screen.update(Message::RemoveSlot, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
 
         assert_eq!(
             document.chunks[0]
@@ -793,16 +840,17 @@ mod tests {
     #[test]
     fn unplaced_slots_fill_from_the_solve_once_and_stick() {
         let session = session();
+        let settings = settings();
         let mut document = Document {
             chunks: vec![model::second_chunk()],
             selected_chunk: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
         let filled = screen.positions[1];
-        click(&mut screen, &session, &mut document, pos(4, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(4, 0));
 
         assert_eq!(
             screen.positions,
@@ -819,13 +867,14 @@ mod tests {
     #[test]
     fn a_never_placed_chunk_pins_to_its_starting_position() {
         let session = session();
-        let mut document = Document {
+        let settings = settings();
+        let document = Document {
             chunks: vec![model::second_chunk()],
             selected_chunk: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
         let first = screen
             .positions
@@ -846,7 +895,7 @@ mod tests {
         );
 
         let catalog = screen.solved.clone();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
         assert_eq!(
             screen.solved, catalog,
             "no pivot: a redundant refresh keeps the catalog"
@@ -856,19 +905,20 @@ mod tests {
     #[test]
     fn chunk_switches_keep_each_chunks_click_history() {
         let session = session();
+        let settings = settings();
         let mut document = Document {
             chunks: vec![Chunk::new(vec![Slot::Rest]), model::second_chunk()],
             selected_chunk: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        screen.refresh(&session, &document, &settings);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         document.selected_chunk = 1;
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
         document.selected_chunk = 0;
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
         assert_eq!(
             screen.positions.first(),
@@ -880,18 +930,18 @@ mod tests {
     #[test]
     fn a_key_change_clears_the_click_history() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        screen.refresh(&session, &document, &settings);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         let changed = Session {
             instrument: model::instrument(),
             tonic: model::TONICS[1],
             quality: Quality::Major,
-            label_mode: model::LabelMode::Degrees,
         };
-        screen.refresh(&changed, &document);
+        screen.refresh(&changed, &document, &settings);
 
         assert_ne!(
             screen.edits[&0].positions[0],
@@ -901,19 +951,43 @@ mod tests {
     }
 
     #[test]
-    fn slot_edits_keep_the_position_map_aligned() {
+    fn an_instrument_change_clears_the_click_history() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        screen.update(Message::ToggleRest, &session, &mut document);
-        screen.refresh(&session, &document);
-        screen.update(Message::RemoveSlot, &session, &mut document);
-        screen.refresh(&session, &document);
-        screen.update(Message::AddSlot, &session, &mut document);
-        screen.refresh(&session, &document);
+        let changed = Session {
+            instrument: model::InstrumentPreset::DropD.instrument(),
+            tonic: model::TONICS[0],
+            quality: Quality::Major,
+        };
+        screen.refresh(&changed, &document, &settings);
+
+        assert_ne!(
+            screen.edits[&0].positions[0],
+            Some(pos(0, 0)),
+            "display positions are instrument-relative, an instrument change drops them"
+        );
+    }
+
+    #[test]
+    fn slot_edits_keep_the_position_map_aligned() {
+        let session = session();
+        let settings = settings();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        screen.update(Message::ToggleRest, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
+        screen.update(Message::RemoveSlot, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
+        screen.update(Message::AddSlot, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
 
         assert_eq!(
             screen.edits[&0].positions,
@@ -925,12 +999,13 @@ mod tests {
     #[test]
     fn a_fingering_wider_than_the_default_cap_is_still_solved() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        click(&mut screen, &session, &mut document, pos(0, 12));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
 
         assert_eq!(
             screen.positions,
@@ -948,23 +1023,24 @@ mod tests {
     #[test]
     fn fingering_steps_swap_the_displayed_positions() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        click(&mut screen, &session, &mut document, pos(4, 6));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(4, 6));
 
-        screen.update(Message::FingeringPrev, &session, &mut document);
-        screen.refresh(&session, &document);
+        screen.update(Message::FingeringPrev, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
         assert_eq!(
             screen.positions,
             Fingering::new(vec![pos(0, 0), pos(5, 1)]),
             "the solve's top-ranked neighbor becomes the displayed fingering"
         );
 
-        screen.update(Message::FingeringNext, &session, &mut document);
-        screen.refresh(&session, &document);
+        screen.update(Message::FingeringNext, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
         assert_eq!(
             screen.positions,
             Fingering::new(vec![pos(0, 0), pos(4, 6)]),
@@ -975,19 +1051,20 @@ mod tests {
     #[test]
     fn rotation_keeps_the_root_note_pinned() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         assert_eq!(
             screen.solved,
             vec![Fingering::new(vec![pos(0, 0)])],
             "a pinned single note has exactly one fingering"
         );
 
-        screen.update(Message::FingeringNext, &session, &mut document);
-        screen.refresh(&session, &document);
+        screen.update(Message::FingeringNext, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
         assert_eq!(
             screen.positions,
             Fingering::new(vec![pos(0, 0)]),
@@ -1003,12 +1080,13 @@ mod tests {
     #[test]
     fn every_fingering_keeps_the_root_note_where_it_was_placed() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(4, 0));
-        click(&mut screen, &session, &mut document, pos(4, 8));
+        click(&mut screen, &session, &mut document, &settings, pos(4, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(4, 8));
 
         assert!(
             screen
@@ -1026,17 +1104,18 @@ mod tests {
     #[test]
     fn rotation_does_not_reshape_the_catalog() {
         let session = session();
+        let settings = settings();
         let mut document = rests_document(1);
         let mut screen = EditScreen::new();
-        screen.refresh(&session, &document);
+        screen.refresh(&session, &document, &settings);
 
-        click(&mut screen, &session, &mut document, pos(0, 0));
-        click(&mut screen, &session, &mut document, pos(0, 12));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         let catalog = screen.solved.clone();
         assert!(catalog.len() >= 2, "the wide move widens the catalog");
 
-        screen.update(Message::FingeringPrev, &session, &mut document);
-        screen.refresh(&session, &document);
+        screen.update(Message::FingeringPrev, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
         assert_eq!(
             screen.solved, catalog,
             "stepping does not re-resolve or re-rank the catalog"

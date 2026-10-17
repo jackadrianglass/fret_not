@@ -7,13 +7,20 @@ use fretboard::fretboard_position::FretboardPosition;
 
 use crate::board;
 use crate::colors::CanvasColors;
+use crate::model::BASE_FONT_SIZE;
 
 const INLAY_FRETS: [i32; 7] = [3, 5, 7, 9, 12, 15, 17];
+// Design sizes at the BASE_FONT_SIZE base — every text size the canvas
+// paints scales off the font-size setting.
 const LABEL_SIZE: f32 = 12.0;
 const SUBSCRIPT_SIZE: f32 = 8.0;
+const GRID_LABEL_SIZE: f32 = 11.0;
+
 // Where the subscript's center sits relative to the dot's center: at the
 // main glyph's lower right, derived from the label's font size.
-const SUBSCRIPT_OFFSET: (f32, f32) = (LABEL_SIZE * 0.33, LABEL_SIZE * 0.35);
+fn subscript_offset(label_size: f32) -> (f32, f32) {
+    (label_size * 0.33, label_size * 0.35)
+}
 
 // The ink box a glyph occupies at [size]: digits and letters render about
 // 0.62·size wide and 0.72·size tall.
@@ -42,6 +49,8 @@ pub struct FretboardCanvas {
     pub max_fret: i32,
     // The open-note SPN label per string, drawn at the left of its row.
     pub open_notes: Vec<String>,
+    // The base font size; the design sizes scale off it.
+    pub font_size: f32,
 }
 
 struct Geometry {
@@ -109,10 +118,15 @@ impl Geometry {
 }
 
 impl FretboardCanvas {
+    fn scaled(&self, size: f32) -> f32 {
+        size * self.font_size / BASE_FONT_SIZE
+    }
+
     // The radius floor that keeps every dot's content inside the rim: the
     // label centered, plus the octave subscript where one is present. The
     // half-extents of the stacked content box, corner to rim.
     fn content_radius(&self) -> f32 {
+        let label_size = self.scaled(LABEL_SIZE);
         self.visuals
             .iter()
             .filter_map(|v| {
@@ -121,14 +135,12 @@ impl FretboardCanvas {
                     .map(|label| (v.octave.is_some(), label.len() as f32))
             })
             .map(|(subscripted, chars)| {
-                let (main_w, main_h) = glyph_half_extents(LABEL_SIZE, chars);
+                let (main_w, main_h) = glyph_half_extents(label_size, chars);
                 let (w, h) = match subscripted {
                     true => {
-                        let (sub_w, sub_h) = glyph_half_extents(SUBSCRIPT_SIZE, 1.0);
-                        (
-                            main_w.max(SUBSCRIPT_OFFSET.0 + sub_w),
-                            main_h.max(SUBSCRIPT_OFFSET.1 + sub_h),
-                        )
+                        let (sub_w, sub_h) = glyph_half_extents(self.scaled(SUBSCRIPT_SIZE), 1.0);
+                        let offset = subscript_offset(label_size);
+                        (main_w.max(offset.0 + sub_w), main_h.max(offset.1 + sub_h))
                     }
                     false => (main_w, main_h),
                 };
@@ -230,7 +242,7 @@ impl FretboardCanvas {
                 content: fret.to_string(),
                 position: Point::new(g.center_x(fret), number_y),
                 color: c.fret_number,
-                size: 11.0.into(),
+                size: self.scaled(GRID_LABEL_SIZE).into(),
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..canvas::Text::default()
@@ -243,7 +255,7 @@ impl FretboardCanvas {
                     content: note.clone(),
                     position: Point::new(4.0, g.string_y(string_index)),
                     color: c.fret_number,
-                    size: 11.0.into(),
+                    size: self.scaled(GRID_LABEL_SIZE).into(),
                     align_x: Alignment::Left,
                     align_y: iced::alignment::Vertical::Center,
                     ..canvas::Text::default()
@@ -262,18 +274,19 @@ impl FretboardCanvas {
                 content: label.clone(),
                 position: center,
                 color,
-                size: LABEL_SIZE.into(),
+                size: self.scaled(LABEL_SIZE).into(),
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..canvas::Text::default()
             });
         }
         if let Some(octave) = v.octave {
+            let offset = subscript_offset(self.scaled(LABEL_SIZE));
             frame.fill_text(canvas::Text {
                 content: octave.to_string(),
-                position: Point::new(center.x + SUBSCRIPT_OFFSET.0, center.y + SUBSCRIPT_OFFSET.1),
+                position: Point::new(center.x + offset.0, center.y + offset.1),
                 color,
-                size: SUBSCRIPT_SIZE.into(),
+                size: self.scaled(SUBSCRIPT_SIZE).into(),
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..canvas::Text::default()

@@ -4,7 +4,7 @@ mod fretboard_canvas;
 mod model;
 mod screens;
 
-use iced::widget::{Stack, button, column, container, pick_list, row, space, text, toggler};
+use iced::widget::{Stack, button, column, container, pick_list, row, slider, space, text};
 use iced::{Border, Element, Fill};
 
 use absolute::spelled_pitch::SpelledPitch;
@@ -13,8 +13,8 @@ use relative::chunk::{Chunk, Slot};
 use relative::key::Quality;
 
 use crate::board::BoardState;
-use crate::model::LabelMode;
-use crate::screens::{ScreenKind, Screens, edit, sequence, tab};
+use crate::model::{BASE_FONT_SIZE, LabelMode};
+use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
@@ -33,13 +33,13 @@ fn main() -> iced::Result {
 enum Message {
     TonicPicked(SpelledPitch),
     QualityPicked(Quality),
-    NotesToggled(bool),
+    TempoChanged(u16),
     ScreenChanged(ScreenKind),
     ChunkSelected(usize),
     ChunkAdded,
     RailToggled,
     PlayToggled,
-    ThemePicked(iced::Theme),
+    Settings(settings::Message),
     Edit(edit::Message),
     Tab(tab::Message),
     Sequence(sequence::Message),
@@ -49,7 +49,6 @@ pub struct Session {
     pub instrument: Instrument,
     pub tonic: SpelledPitch,
     pub quality: Quality,
-    pub label_mode: LabelMode,
 }
 
 impl Session {
@@ -78,6 +77,34 @@ pub struct Playback {
     pub tempo: u16,
 }
 
+// The persistent preferences — one owner for everything the settings page
+// edits, shaped so a future persistence layer is a leaf change.
+pub struct Settings {
+    pub theme: iced::Theme,
+    pub label_mode: LabelMode,
+    pub font_size: f32,
+    pub solver_fret_cap: i32,
+}
+
+impl Settings {
+    // A design size (sized for the BASE_FONT_SIZE base) scaled to the
+    // current font size.
+    pub fn scale(&self, size: f32) -> f32 {
+        size * self.font_size / BASE_FONT_SIZE
+    }
+}
+
+impl Default for Settings {
+    fn default() -> Settings {
+        Settings {
+            theme: iced::Theme::KanagawaWave,
+            label_mode: LabelMode::Degrees,
+            font_size: BASE_FONT_SIZE,
+            solver_fret_cap: 6,
+        }
+    }
+}
+
 struct App {
     session: Session,
     document: Document,
@@ -86,7 +113,7 @@ struct App {
     screens: Screens,
     active: ScreenKind,
     rail_open: bool,
-    theme: iced::Theme,
+    settings: Settings,
 }
 
 impl App {
@@ -95,8 +122,8 @@ impl App {
             instrument: model::instrument(),
             tonic: model::TONICS[0],
             quality: Quality::Major,
-            label_mode: LabelMode::Degrees,
         };
+        let settings = Settings::default();
         let document = Document {
             chunks: vec![model::initial_chunk(), model::second_chunk()],
             selected_chunk: 0,
@@ -112,7 +139,7 @@ impl App {
             &session.instrument,
             session.key(),
             session.mode(),
-            session.label_mode,
+            settings.label_mode,
         );
         let mut app = App {
             session,
@@ -124,32 +151,35 @@ impl App {
             board,
             screens: Screens::new(),
             rail_open: true,
-            theme: iced::Theme::KanagawaWave,
+            settings,
             active: ScreenKind::Edit,
         };
-        app.screens.refresh(&app.session, &app.document);
+        app.screens
+            .refresh(&app.session, &app.document, &app.settings);
         app
     }
 
-    // The board and the screens' caches are derived from the session; both
-    // are recomputed when it changes.
+    // The board and the screens' caches are derived from the session and
+    // the settings; both are recomputed when they change.
     fn refresh_session(&mut self) {
         self.board = BoardState::new(
             &self.session.instrument,
             self.session.key(),
             self.session.mode(),
-            self.session.label_mode,
+            self.settings.label_mode,
         );
-        self.screens.refresh(&self.session, &self.document);
+        self.screens
+            .refresh(&self.session, &self.document, &self.settings);
     }
 
     fn refresh_document(&mut self) {
-        self.screens.refresh(&self.session, &self.document);
+        self.screens
+            .refresh(&self.session, &self.document, &self.settings);
     }
 }
 
 fn theme(state: &App) -> iced::Theme {
-    state.theme.clone()
+    state.settings.theme.clone()
 }
 
 fn update(state: &mut App, message: Message) {
@@ -166,17 +196,7 @@ fn update(state: &mut App, message: Message) {
                 state.refresh_session();
             }
         }
-        Message::NotesToggled(enabled) => {
-            let label_mode = if enabled {
-                LabelMode::Notes
-            } else {
-                LabelMode::Degrees
-            };
-            if label_mode != state.session.label_mode {
-                state.session.label_mode = label_mode;
-                state.refresh_session();
-            }
-        }
+        Message::TempoChanged(tempo) => state.playback.tempo = tempo,
         Message::ScreenChanged(kind) => state.active = kind,
         Message::ChunkSelected(index) => {
             if index < state.document.chunks.len() && index != state.document.selected_chunk {
@@ -191,15 +211,22 @@ fn update(state: &mut App, message: Message) {
         }
         Message::RailToggled => state.rail_open = !state.rail_open,
         Message::PlayToggled => state.playback.playing = !state.playback.playing,
-        // Every derived color reads the theme at render time, so switching
-        // needs no refresh of the board or the screens' caches.
-        Message::ThemePicked(theme) => state.theme = theme,
-        Message::Edit(message) => {
+        Message::Settings(message) => {
             if state
                 .screens
-                .edit
-                .update(message, &state.session, &mut state.document)
+                .settings
+                .update(&mut state.session, &mut state.settings, message)
             {
+                state.refresh_session();
+            }
+        }
+        Message::Edit(message) => {
+            if state.screens.edit.update(
+                message,
+                &state.session,
+                &mut state.document,
+                &state.settings,
+            ) {
                 state.refresh_document();
             }
         }
@@ -234,7 +261,7 @@ fn group(theme: &iced::Theme) -> container::Style {
     }
 }
 
-fn divider(theme: &iced::Theme) -> iced::widget::rule::Style {
+pub(crate) fn divider(theme: &iced::Theme) -> iced::widget::rule::Style {
     iced::widget::rule::Style {
         color: colors::divider_color(theme),
         radius: Default::default(),
@@ -270,6 +297,7 @@ fn view(state: &App) -> Element<'_, Message> {
             &state.session,
             &state.document,
             &state.board,
+            &state.settings,
         )
         .map(Message::Edit),
         ScreenKind::Tab => tab::view(
@@ -277,6 +305,7 @@ fn view(state: &App) -> Element<'_, Message> {
             &state.session,
             &state.document,
             &state.board,
+            &state.settings,
         )
         .map(Message::Tab),
         ScreenKind::Sequence => sequence::view(
@@ -284,14 +313,23 @@ fn view(state: &App) -> Element<'_, Message> {
             &state.session,
             &state.document,
             &state.board,
+            &state.settings,
         )
         .map(Message::Sequence),
+        ScreenKind::Settings => settings::view(
+            &state.screens.settings,
+            &state.session,
+            &state.settings,
+            &state.board,
+        )
+        .map(Message::Settings),
     };
 
     let content = container(screen).width(Fill).height(Fill).padding(12);
 
+    // The chunk rail is editing chrome; the settings page stands alone.
     let mut body = row![].height(Fill);
-    if state.rail_open {
+    if state.rail_open && state.active != ScreenKind::Settings {
         body = body
             .push(library_rail(state))
             .push(iced::widget::rule::vertical(1.0).style(divider));
@@ -308,8 +346,16 @@ fn view(state: &App) -> Element<'_, Message> {
 
 fn top_bar(state: &App) -> Element<'_, Message> {
     let mut nav = row![].spacing(4);
-    nav = nav.push(button(if state.rail_open { "«" } else { "»" }).on_press(Message::RailToggled));
-    for kind in [ScreenKind::Edit, ScreenKind::Tab, ScreenKind::Sequence] {
+    if state.active != ScreenKind::Settings {
+        nav = nav
+            .push(button(if state.rail_open { "«" } else { "»" }).on_press(Message::RailToggled));
+    }
+    for kind in [
+        ScreenKind::Edit,
+        ScreenKind::Tab,
+        ScreenKind::Sequence,
+        ScreenKind::Settings,
+    ] {
         let active = state.active == kind;
         nav = nav.push(
             button(text(kind.label()))
@@ -341,15 +387,8 @@ fn top_bar(state: &App) -> Element<'_, Message> {
             Some(state.session.quality),
             Message::QualityPicked,
         ),
-        toggler(matches!(state.session.label_mode, LabelMode::Notes))
-            .label("note names")
-            .on_toggle(Message::NotesToggled),
+        slider(40..=240, state.playback.tempo, Message::TempoChanged).width(120),
         text(format!("{} bpm", state.playback.tempo)),
-        pick_list(
-            iced::Theme::ALL.to_vec(),
-            Some(state.theme.clone()),
-            Message::ThemePicked,
-        ),
     ]
     .spacing(8)
     .align_y(iced::Alignment::Center);
@@ -417,6 +456,53 @@ mod tests {
         update(&mut app, Message::ScreenChanged(ScreenKind::Tab));
         assert_eq!(app.active, ScreenKind::Tab);
         assert_eq!(app.document.chunks.len(), 2);
+    }
+
+    #[test]
+    fn the_settings_page_keeps_the_document_and_the_rail_state() {
+        let mut app = App::new();
+        update(&mut app, Message::ScreenChanged(ScreenKind::Settings));
+        assert_eq!(app.active, ScreenKind::Settings);
+        assert_eq!(app.document.chunks.len(), 2);
+        assert!(app.rail_open, "the rail state survives the settings page");
+    }
+
+    #[test]
+    fn the_tempo_slider_writes_the_playback_tempo() {
+        let mut app = App::new();
+        update(&mut app, Message::TempoChanged(90));
+        assert_eq!(app.playback.tempo, 90);
+    }
+
+    #[test]
+    fn a_theme_pick_from_settings_reaches_the_app_theme() {
+        let mut app = App::new();
+        update(
+            &mut app,
+            Message::Settings(settings::Message::ThemePicked(iced::Theme::Dark)),
+        );
+        assert_eq!(app.settings.theme, iced::Theme::Dark);
+    }
+
+    #[test]
+    fn a_label_mode_pick_from_settings_reaches_the_settings() {
+        let mut app = App::new();
+        update(
+            &mut app,
+            Message::Settings(settings::Message::LabelModePicked(LabelMode::Notes)),
+        );
+        assert_eq!(app.settings.label_mode, LabelMode::Notes);
+    }
+
+    #[test]
+    fn the_default_font_size_reproduces_the_design_sizes() {
+        let settings = Settings::default();
+        assert_eq!(settings.scale(16.0), 16.0);
+        assert_eq!(settings.scale(11.0), 11.0);
+        let mut doubled = Settings::default();
+        doubled.font_size = 32.0;
+        assert_eq!(doubled.scale(16.0), 32.0);
+        assert_eq!(doubled.scale(11.0), 22.0);
     }
 
     #[test]

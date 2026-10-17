@@ -8,6 +8,7 @@ use fretboard::tuning;
 use relative::key::Key;
 use relative::mode::Mode;
 
+use crate::Settings;
 use crate::fretboard_canvas::{FretboardCanvas, Visual};
 use crate::model::{self, Dot, LabelMode};
 
@@ -83,12 +84,17 @@ impl BoardState {
     }
 }
 
-pub fn view<'a>(board: &'a BoardState, highlight: Highlight) -> Element<'a, Event> {
+pub fn view<'a>(
+    board: &'a BoardState,
+    highlight: Highlight,
+    settings: &'a Settings,
+) -> Element<'a, Event> {
     canvas(FretboardCanvas {
         visuals: board.visuals(&highlight),
         string_count: board.string_count,
         max_fret: board.max_fret,
         open_notes: board.open_notes.clone(),
+        font_size: settings.font_size,
     })
     .width(Fill)
     .height(Fill)

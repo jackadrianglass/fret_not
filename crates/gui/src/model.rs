@@ -18,16 +18,68 @@ pub const PROGRESSION: [i32; 3] = [1, 4, 5];
 pub const PROGRESSION_LABELS: [&str; 3] = ["I", "IV", "V"];
 pub const MAX_SLOTS: usize = 12;
 
-// The solver's exploration window: fingerings must stay within this fret
-// distance of the anchor.
+// The solver's exploration window: fingerings must stay within the fret cap
+// of the anchor. The anchor stays fixed; the cap is a setting.
 pub const SOLVER_ANCHOR: FretboardPosition = FretboardPosition {
     string_index: 0,
     fret: 5,
 };
-pub const SOLVER_FRET_CAP: i32 = 6;
+
+// Text sizes across the app are design sizes at this base; the font-size
+// setting scales them off it.
+pub const BASE_FONT_SIZE: f32 = 16.0;
 
 pub fn instrument() -> Instrument {
-    Instrument::new_uniform(tuning::standard(), 22)
+    InstrumentPreset::Standard.instrument()
+}
+
+// The known tunings, each with the fret count its instrument ships with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstrumentPreset {
+    Standard,
+    DropD,
+    SevenString,
+    BassFour,
+}
+
+impl InstrumentPreset {
+    pub const ALL: [InstrumentPreset; 4] = [
+        InstrumentPreset::Standard,
+        InstrumentPreset::DropD,
+        InstrumentPreset::SevenString,
+        InstrumentPreset::BassFour,
+    ];
+
+    pub fn instrument(&self) -> Instrument {
+        match self {
+            InstrumentPreset::Standard => Instrument::new_uniform(tuning::standard(), 22),
+            InstrumentPreset::DropD => Instrument::new_uniform(tuning::drop_d(), 22),
+            InstrumentPreset::SevenString => {
+                Instrument::new_uniform(tuning::standard_seven_string(), 24)
+            }
+            InstrumentPreset::BassFour => Instrument::new_uniform(tuning::bass_four(), 20),
+        }
+    }
+
+    // The preset an instrument matches by tuning. Custom tunings (a later
+    // follow-up) match nothing and fall back to Standard.
+    pub fn of(instrument: &Instrument) -> InstrumentPreset {
+        InstrumentPreset::ALL
+            .into_iter()
+            .find(|preset| preset.instrument().tuning == instrument.tuning)
+            .unwrap_or(InstrumentPreset::Standard)
+    }
+}
+
+impl std::fmt::Display for InstrumentPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            InstrumentPreset::Standard => "Standard 6-string",
+            InstrumentPreset::DropD => "Drop D",
+            InstrumentPreset::SevenString => "7-string",
+            InstrumentPreset::BassFour => "Bass 4-string",
+        })
+    }
 }
 
 pub const TONICS: [SpelledPitch; 12] = [
@@ -53,10 +105,19 @@ pub fn mode_of(quality: Quality) -> Mode {
     Mode::from(quality)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LabelMode {
     Degrees,
     Notes,
+}
+
+impl std::fmt::Display for LabelMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LabelMode::Degrees => "Degrees",
+            LabelMode::Notes => "Notes",
+        })
+    }
 }
 
 pub struct Dot {
@@ -292,5 +353,19 @@ mod tests {
             .find(|dot| dot.position == eb4)
             .expect("Eb4 is off-key in C major");
         assert_eq!(dot.label, "Eb4", "full SPN in note-name mode");
+    }
+
+    #[test]
+    fn instrument_presets_round_trip_through_their_instrument() {
+        for preset in InstrumentPreset::ALL {
+            assert_eq!(InstrumentPreset::of(&preset.instrument()), preset);
+        }
+    }
+
+    #[test]
+    fn the_default_instrument_is_standard_with_twenty_two_frets() {
+        let instrument = instrument();
+        assert_eq!(instrument, InstrumentPreset::Standard.instrument());
+        assert_eq!(instrument.max_fret(), 22);
     }
 }

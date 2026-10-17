@@ -181,25 +181,29 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            re-baseline it deliberately.
 
 crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout prototype)
-  main.rs                  the shell: App = Session (instrument/tonic/quality/label
-                           mode) + Document (chunks + sequence steps, owned here and
-                           shared by every screen) + Playback + theme; persistent
-                           chrome (top bar with nav/config/playback groups, collapsible
-                           chunk-library rail); screen views are routed in via .map
+  main.rs                  the shell: App = Session (instrument/tonic/quality) +
+                           Settings (theme/label mode/font size/solver fret cap) +
+                           Document (chunks + sequence steps, owned here and
+                           shared by every screen) + Playback; persistent chrome
+                           (top bar with nav, key/tempo config and playback
+                           groups, collapsible chunk-library rail — hidden on the
+                           settings page); screen views are routed in via .map
                            and report mutations back as a bool that triggers
                            screens.refresh
   board.rs                 the shared fretboard component: BoardState (in-key dots,
-                           recomputed on session change in update) + Highlight (played
-                           positions + one optional ringed position); emits
-                           board::Event — each screen maps it into its own Message
+                           recomputed on session/label-mode change in update) +
+                           Highlight (played positions + one optional ringed
+                           position); emits board::Event — each screen maps it
+                           into its own Message
   colors.rs                palette-driven custom colors: every chrome/board shade is
                            derived from the iced Theme palette at render time, inside
                            widget style closures and the canvas draw call — theme
-                           switching only reassigns state.theme, no refresh anywhere
+                           switching only reassigns state.settings.theme, no
+                           refresh anywhere
   screens/                 one module per feature view, each with a private Message;
                            fingerings are cached in update and go stale on any
-                           document/session change, which the shell fixes by calling
-                           Screens::refresh
+                           document/session/settings change, which the shell fixes
+                           by calling Screens::refresh
     edit.rs                slot band (degree + resolved note name per cell) centered
                            over the fingering board; board clicks write degrees into
                            the selected slot, off-key clicks clear it to a rest
@@ -209,8 +213,13 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
     sequence.rs            step-card timeline (root roman + chunk letter + degree
                            glyphs, horizontally scrollable); the board follows the
                            selected step
+    settings.rs            the settings page: rule-divided sections (Appearance:
+                           theme/labels/font size, Fretboard: tuning preset +
+                           solver fret cap) over the docked board as a live
+                           preview; stateless but for the number inputs' text
   model.rs                 view-state glue only: TONICS const + typed pick_list
-                           payloads, board assembly over degrees_in_window +
+                           payloads (InstrumentPreset, LabelMode), BASE_FONT_SIZE,
+                           board assembly over degrees_in_window +
                            spelled_degree_at (in-key dots and accidental dots),
                            solve wiring, seed chunks/steps, chunk letters, romans —
                            music knowledge stays in the core crates
@@ -220,7 +229,8 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
                            the finger presses), fret 0 sits left of the nut;
                            strings are drawn tab-convention (high E top) with SPN
                            open-note labels, degree labels carry a small key-referenced
-                           octave-count subscript
+                           octave-count subscript; every text size scales off the
+                           font-size setting
 ```
 
 ## Data flow
@@ -231,12 +241,13 @@ pick-and-practice flow (`model::solve`, prev/next over the ranked fingerings).
 
 GUI flow: tonic/quality → key/mode → `model::board` over
 `fretboard::degrees_in_window` / `degree_at` (concrete positions, clamped to
-the instrument) — computed in update on session change and cached in
+the instrument) — computed in update on session/settings change and cached in
 BoardState; each screen caches its solved fingerings and the shell calls
-Screens::refresh after any document/session mutation → tab + fretboard
+Screens::refresh after any document/session/settings mutation → tab + fretboard
 rendering. The fretboard is a shared component docked at the bottom of every
 screen: the full in-key field drawn as a quiet labeled backdrop, the played
-positions emphasized on top of it.
+positions emphasized on top of it (a live preview of the label-mode and
+font-size settings on the settings page).
 
 ## Conventions that will bite you if ignored
 

@@ -7,7 +7,7 @@ use relative::chunk::Slot;
 use crate::board::{self, BoardState, Highlight};
 use crate::colors;
 use crate::model;
-use crate::{Document, Session, outlined};
+use crate::{Document, Session, Settings, outlined};
 
 pub struct SequenceScreen {
     step: usize,
@@ -30,7 +30,7 @@ impl SequenceScreen {
         }
     }
 
-    pub fn refresh(&mut self, session: &Session, document: &Document) {
+    pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
         let Some(step) = document.steps.get(self.step) else {
             return;
         };
@@ -42,7 +42,7 @@ impl SequenceScreen {
             chunk,
             step.root,
             model::SOLVER_ANCHOR,
-            model::SOLVER_FRET_CAP,
+            settings.solver_fret_cap,
         );
         self.solved = solved;
         self.slot_notes = slot_notes;
@@ -87,6 +87,7 @@ pub fn view<'a>(
     _session: &'a Session,
     document: &'a Document,
     board: &'a BoardState,
+    settings: &'a Settings,
 ) -> Element<'a, Message> {
     let mut cards = row![].spacing(6).align_y(Alignment::Center);
     for (i, step) in document.steps.iter().enumerate() {
@@ -100,10 +101,12 @@ pub fn view<'a>(
             .collect::<Vec<_>>()
             .join(" ");
         let card = column![
-            text(model::roman(step.root)).size(12.0).style(secondary),
-            text(model::chunk_name(step.chunk)).size(18.0),
+            text(model::roman(step.root))
+                .size(settings.scale(12.0))
+                .style(secondary),
+            text(model::chunk_name(step.chunk)).size(settings.scale(18.0)),
             text(glyphs)
-                .size(10.0)
+                .size(settings.scale(10.0))
                 .font(Font::MONOSPACE)
                 .style(secondary),
         ];
@@ -123,6 +126,7 @@ pub fn view<'a>(
                 positions: fingering,
                 selected: None,
             },
+            settings,
         )
         .map(Message::Board),
     )

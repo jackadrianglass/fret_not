@@ -55,6 +55,13 @@ plan, in one sitting). Verified against docs.rs and the compiler.
   payloads (e.g. `SpelledPitch`, a `Quality`-like enum) go straight into the
   list and come back typed in the message, no string round-tripping. Options
   can be a `Vec<T>` (or `const` array `.to_vec()`); selected is `Some(T)`.
+- `slider(range, value, on_change)` — helper fn over a `RangeInclusive<T>` with
+  `T: Copy + From<u8> + PartialOrd` (`u16`/`i32`/`f32` all qualify);
+  `.width(...)` sizes it. Verified against iced_widget 0.14.2.
+- There is **no `number_input` widget** in iced_widget 0.14.2 — numeric settings
+  are `text_input(placeholder, value).on_input(...)` bound to a `String` held
+  in screen state, parsed and clamped on input, with the text re-synced only
+  when what it parses to diverges from the committed value.
 - `use fretboard::fretboard;` shadows the crate name — `fretboard::tuning`
   then resolves against the module, not the crate. Import the functions
   (`use fretboard::fretboard::degree_at;`) instead.

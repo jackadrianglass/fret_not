@@ -54,12 +54,12 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   degree-reference note (degree 1–7, alteration b/n/#, octave counted from
   the chunk's anchor note — its first note — register-free, so chunks are
   key-independent). Slot presence is the rhythm.
-- Slot strip: one cell per slot, label is the degree label ("1", "b3", with a
+- Slot band: one cell per slot, label is the degree label ("1", "b3", with a
   trailing apostrophe per octave above the anchor note or a trailing comma
   per octave below it) or "." for a rest; rest cells render dimmed, note
-  cells in the accent color; the selected slot has a cursor outline. Click a
-  cell to select it. Note cells also show the resolved SPN note name in the
-  register the chunk currently sits in.
+  cells in the accent color; the selected slot carries an accent underline.
+  Click a cell to select it. Note cells also show the resolved SPN note name
+  in the register the chunk currently sits in.
 - Board clicks write the selected slot: every position resolves — in-key
   positions store their degree, off-key positions store their spelled
   accidental (a "b3", a "#4") — with the octave counted from the anchor
@@ -85,8 +85,14 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   note takes a default starting position — the nearest playable position
   sounding it — and the catalog pins there from the first refresh, so the
   count never collapses after a rotation.
-- "+" button after the last cell appends a rest (bounded by a max-slot count);
-  "-" removes the selected slot (cursor moves left, or to 0 at the left edge).
+- Each cell carries an "x" button at its top-right corner deleting that
+  particular slot; the cursor tracks its slot — a deletion before it shifts
+  it left, deleting past the end clamps it onto the new end.
+- The band's cells are separated by insert points that rest as hairline
+  rules and expand on hover to reveal a "+" inserting a rest slot there; a
+  trailing "+" compartment (accent, always visible, a touch wider) appends
+  one. Both are bounded by the max-slot count, and the cursor lands on the
+  fresh slot, so the next board click writes into it.
 - Inspector row below the strip: Note/Rest toggle, degree dropdown (1–7),
   alteration toggle (b/n/#), octave toggle (0/1). Editing a slot that is a rest
   converts it into a note holding the edited value at its defaults.

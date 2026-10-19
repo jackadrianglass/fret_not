@@ -18,7 +18,7 @@ use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
-        .title("fret_not")
+        .title("fret_not [band v4]")
         .theme(theme)
         .window(iced::window::Settings {
             size: iced::Size::new(1400.0, 900.0),

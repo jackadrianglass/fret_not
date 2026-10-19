@@ -43,7 +43,7 @@ available to you.
 
 ```sh
 cargo test --workspace    # the test suite (all tests inline per module)
-cargo fmt                 # rustfmt; run before calling something done
+cargo fmt                 # rustfmt; don't call. happens automatically when changes are committed
 cargo build --workspace   # build
 cargo clippy --workspace  # stricter lint pass
 ```

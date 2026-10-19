@@ -32,6 +32,10 @@ pub fn push(chunk: &mut Chunk, slot: Slot) {
     chunk.0.push(slot);
 }
 
+pub fn insert(chunk: &mut Chunk, index: usize, slot: Slot) {
+    chunk.0.insert(index, slot);
+}
+
 pub fn remove(chunk: &mut Chunk, index: usize) -> Slot {
     chunk.0.remove(index)
 }
@@ -82,7 +86,9 @@ pub fn apply_progression(chunk: &Chunk, root_degrees: &[i32]) -> Vec<Chunk> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, Slot, apply_progression, push, reframe, remove, set, shift_octaves};
+    use super::{
+        Chunk, Slot, apply_progression, insert, push, reframe, remove, set, shift_octaves,
+    };
     use crate::degree_reference::DegreeReference;
     use crate::scale_degree::ScaleDegree;
     use absolute::alteration::Alteration;
@@ -211,6 +217,17 @@ mod tests {
         assert!(
             matches!(removed, Slot::Note(dr) if dr.scale_degree.degree == 1),
             "remove returns the slot at the index"
+        );
+    }
+
+    #[test]
+    fn insert_places_a_slot_at_the_index() {
+        let mut chunk = Chunk::new(vec![bare_note(1), bare_note(2)]);
+        insert(&mut chunk, 1, Slot::Rest);
+        assert_eq!(
+            as_degrees(&chunk),
+            vec![Some(1), None, Some(2)],
+            "insert shifts the tail right, growing the chunk by one"
         );
     }
 

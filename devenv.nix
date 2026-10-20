@@ -9,4 +9,8 @@
     enable = true;
     lsp.enable = true;
   };
+
+  git-hooks.hooks = {
+    rustfmt.enable = true;
+  };
 }

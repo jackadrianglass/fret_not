@@ -4,8 +4,10 @@ mod fretboard_canvas;
 mod model;
 mod screens;
 
+use std::time::Duration;
+
 use iced::widget::{Stack, button, column, container, pick_list, row, slider, space, text};
-use iced::{Border, Element, Fill};
+use iced::{Border, Element, Fill, Subscription};
 
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::instrument::Instrument;
@@ -18,8 +20,9 @@ use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
-        .title("fret_not [band v4]")
+        .title("fret_not [hover v13]")
         .theme(theme)
+        .subscription(subscription)
         .window(iced::window::Settings {
             size: iced::Size::new(1400.0, 900.0),
             min_size: Some(iced::Size::new(1000.0, 620.0)),
@@ -180,6 +183,20 @@ impl App {
 
 fn theme(state: &App) -> iced::Theme {
     state.settings.theme.clone()
+}
+
+// How long the cursor must dwell on an insert point before it expands.
+const HOVER_DELAY: Duration = Duration::from_millis(250);
+
+// The tick subscription runs only while an expansion is pending — the
+// subscription is re-evaluated after every message batch, so the handler
+// spending the pending hover turns the timer off.
+fn subscription(app: &App) -> Subscription<Message> {
+    if app.active == ScreenKind::Edit && app.screens.edit.hover_pending() {
+        iced::time::every(HOVER_DELAY).map(|_| Message::Edit(edit::Message::HoverTick))
+    } else {
+        Subscription::none()
+    }
 }
 
 fn update(state: &mut App, message: Message) {

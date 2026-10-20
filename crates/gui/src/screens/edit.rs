@@ -54,6 +54,10 @@ pub struct EditScreen {
     // The insert point under the cursor, if any — the band's hover state,
     // tracked per point so the hovered compartment can expand.
     hovered_insert: Option<usize>,
+    // The insert point whose expansion the hover timer will fire. The
+    // compartment expands only after the cursor dwells on it, so passing
+    // over a point on the way to a cell never re-flows the band.
+    hover_pending: Option<usize>,
     // The chunk + session the caches were derived against; a change resets
     // the cursor and, on a key or instrument change, the click history —
     // stored positions are instrument-relative, so a new instrument
@@ -109,6 +113,7 @@ pub enum Message {
     ToggleRest,
     FingeringPrev,
     FingeringNext,
+    HoverTick,
 }
 
 impl EditScreen {
@@ -121,8 +126,15 @@ impl EditScreen {
             positions: Fingering::default(),
             fingering_index: None,
             hovered_insert: None,
+            hover_pending: None,
             anchored: None,
         }
+    }
+
+    // Whether an insert point's expansion is waiting on the hover timer —
+    // the shell runs the tick subscription only then.
+    pub fn hover_pending(&self) -> bool {
+        self.hover_pending.is_some()
     }
 
     // The selected chunk's octave reference register — the anchor note's.
@@ -160,6 +172,9 @@ impl EditScreen {
         // A hover left over from before a removal can point past the end.
         if self.hovered_insert.is_some_and(|index| index > chunk.len()) {
             self.hovered_insert = None;
+        }
+        if self.hover_pending.is_some_and(|index| index > chunk.len()) {
+            self.hover_pending = None;
         }
         let edit = self
             .edits
@@ -276,12 +291,21 @@ impl EditScreen {
                 false
             }
             Message::InsertHovered(index) => {
-                self.hovered_insert = Some(index);
+                self.hover_pending = Some(index);
                 false
             }
             Message::InsertUnhovered(index) => {
+                if self.hover_pending == Some(index) {
+                    self.hover_pending = None;
+                }
                 if self.hovered_insert == Some(index) {
                     self.hovered_insert = None;
+                }
+                false
+            }
+            Message::HoverTick => {
+                if let Some(index) = self.hover_pending.take() {
+                    self.hovered_insert = Some(index);
                 }
                 false
             }
@@ -343,9 +367,9 @@ impl EditScreen {
 }
 
 // A click writes the selected slot and steps the cursor. Every position
-// resolves through spelled_degree_at — in-key or accidental — and stores
-// relative to the anchor note: the chunk's first note, the register the
-// octaves count from. Writing the anchor note moves the reference (the
+// resolves through spelled_degree_at — in-key or accidental — and
+// stores relative to the anchor note: the chunk's first note, the register
+// the octaves count from. Writing the anchor note moves the reference (the
 // other notes shift to keep their sounding pitches); any other note stores
 // its register distance from it. The clicked position becomes the slot's
 // display position — it sticks until the user touches the slot again.
@@ -532,13 +556,22 @@ fn band_outline(theme: &iced::Theme) -> container::Style {
     }
 }
 
-fn cell_style(theme: &iced::Theme, status: button::Status) -> button::Style {
+fn cell_style(theme: &iced::Theme, status: button::Status, selected: bool) -> button::Style {
     button::Style {
         background: match status {
             button::Status::Hovered => Some(colors::group_background(theme).into()),
             _ => None,
         },
         text_color: colors::text(theme),
+        border: iced::Border {
+            width: 1.0,
+            radius: 4.0.into(),
+            color: if selected {
+                colors::accent(theme)
+            } else {
+                colors::cell_border(theme)
+            },
+        },
         ..button::Style::default()
     }
 }
@@ -554,14 +587,25 @@ fn ghost(theme: &iced::Theme, status: button::Status) -> button::Style {
     }
 }
 
-fn insert_style(theme: &iced::Theme, hovered: bool) -> button::Style {
+// An insert point's hover state: resting, hovering (the cursor is over it
+// and the expansion timer is running), or expanded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InsertHover {
+    Rest,
+    Hovering,
+    Expanded,
+}
+
+fn insert_style(theme: &iced::Theme, hover: InsertHover) -> button::Style {
     button::Style {
-        background: if hovered {
-            None
-        } else {
-            Some(colors::divider_color(theme).into())
+        // Hovering tints the bar to mark it interactive; the expansion
+        // itself still waits for the dwell.
+        background: match hover {
+            InsertHover::Rest => Some(colors::divider_color(theme).into()),
+            InsertHover::Hovering => Some(colors::cell_border(theme).into()),
+            InsertHover::Expanded => None,
         },
-        text_color: if hovered {
+        text_color: if hover == InsertHover::Expanded {
             colors::accent(theme)
         } else {
             iced::Color::TRANSPARENT
@@ -601,21 +645,21 @@ fn underline(selected: bool) -> impl Fn(&iced::Theme) -> iced::widget::rule::Sty
 // click.
 fn insert_point<'a>(
     index: usize,
-    hovered: bool,
+    hover: InsertHover,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
-    let width = if hovered {
+    let width = if hover == InsertHover::Expanded {
         settings.scale(22.0)
     } else {
         settings.scale(6.0)
     };
     mouse_area(
-        button(text("+").size(settings.scale(14.0)))
+        button(container(text("+").size(settings.scale(14.0))).center(Fill))
             .width(width)
             .height(Fill)
             .padding(0)
             .on_press(Message::InsertSlot(index))
-            .style(move |theme, _status| insert_style(theme, hovered)),
+            .style(move |theme, _status| insert_style(theme, hover)),
     )
     .on_enter(Message::InsertHovered(index))
     .on_exit(Message::InsertUnhovered(index))
@@ -642,6 +686,8 @@ fn slot_band<'a>(
                     }
                     None => String::new(),
                 };
+                // The underline rule is Fill-wide; pinning the column keeps
+                // the cell content-sized instead of leaking Fill up the band.
                 column![
                     text(model::slot_label(*dr))
                         .size(settings.scale(16.0))
@@ -650,13 +696,15 @@ fn slot_band<'a>(
                     iced::widget::rule::horizontal(2.0).style(underline(is_selected)),
                 ]
                 .spacing(2)
+                .width(iced::Length::Shrink)
             }
             Slot::Rest => column![
                 text(".").size(settings.scale(16.0)).style(secondary),
                 text("rest").size(settings.scale(11.0)).style(secondary),
                 iced::widget::rule::horizontal(2.0).style(underline(is_selected)),
             ]
-            .spacing(2),
+            .spacing(2)
+            .width(iced::Length::Shrink),
         };
         // The delete button rides the cell's top-right corner as an overlay
         // layer — the container passes clicks through to the cell below.
@@ -664,38 +712,37 @@ fn slot_band<'a>(
             .padding(2)
             .on_press(Message::RemoveSlot(i))
             .style(ghost);
-        band = band.push(
-            Stack::with_children(vec![
-                button(
-                    cell.padding(iced::Padding {
-                        top: 4.0,
-                        right: 16.0,
-                        bottom: 2.0,
-                        left: 8.0,
-                    }),
-                )
-                .on_press(Message::SlotSelected(i))
-                .style(cell_style)
+        band = band.push(Stack::with_children(vec![
+            button(cell.padding(iced::Padding {
+                top: 4.0,
+                right: 16.0,
+                bottom: 2.0,
+                left: 8.0,
+            }))
+            .on_press(Message::SlotSelected(i))
+            .style(move |theme, status| cell_style(theme, status, is_selected))
+            .into(),
+            container(delete)
+                .width(Fill)
+                .height(Fill)
+                .align_x(iced::alignment::Horizontal::Right)
+                .align_y(iced::alignment::Vertical::Top)
                 .into(),
-                container(delete)
-                    .width(Fill)
-                    .height(Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .align_y(iced::alignment::Vertical::Top)
-                    .into(),
-            ]),
-        );
+        ]));
         if i + 1 < chunk.len() {
-            band = band.push(insert_point(
-                i + 1,
-                screen.hovered_insert == Some(i + 1),
-                settings,
-            ));
+            let hover = if screen.hovered_insert == Some(i + 1) {
+                InsertHover::Expanded
+            } else if screen.hover_pending == Some(i + 1) {
+                InsertHover::Hovering
+            } else {
+                InsertHover::Rest
+            };
+            band = band.push(insert_point(i + 1, hover, settings));
         }
     }
 
     band = band.push(
-        button(text("+").size(settings.scale(14.0)))
+        button(container(text("+").size(settings.scale(14.0))).center(Fill))
             .width(settings.scale(26.0))
             .height(Fill)
             .padding(0)
@@ -703,7 +750,13 @@ fn slot_band<'a>(
             .style(trailing_style),
     );
 
-    container(band).padding(4).style(band_outline).into()
+    // The insert points fill the row's height; pinning the row to Shrink
+    // keeps the band content-sized — Row::push would otherwise enclose the
+    // row's height with their Fill.
+    container(band.height(iced::Length::Shrink))
+        .padding(4)
+        .style(band_outline)
+        .into()
 }
 
 #[cfg(test)]
@@ -1278,12 +1331,7 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         let len = document.chunks[0].len();
-        screen.update(
-            Message::InsertSlot(len),
-            &session,
-            &mut document,
-            &settings,
-        );
+        screen.update(Message::InsertSlot(len), &session, &mut document, &settings);
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(document.chunks[0].len(), len + 1, "appended");
@@ -1342,19 +1390,41 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert!(
-            !screen.update(Message::InsertHovered(1), &session, &mut document, &settings),
+            !screen.update(
+                Message::InsertHovered(1),
+                &session,
+                &mut document,
+                &settings
+            ),
             "hovering changes no document"
         );
+        assert_eq!(
+            screen.hovered_insert, None,
+            "the compartment does not expand before the dwell"
+        );
+        assert!(screen.hover_pending(), "the expansion is scheduled");
+
+        screen.update(Message::HoverTick, &session, &mut document, &settings);
         assert_eq!(screen.hovered_insert, Some(1));
 
-        screen.update(Message::InsertUnhovered(2), &session, &mut document, &settings);
+        screen.update(
+            Message::InsertUnhovered(2),
+            &session,
+            &mut document,
+            &settings,
+        );
         assert_eq!(
             screen.hovered_insert,
             Some(1),
             "another point's exit does not clear the hover"
         );
 
-        screen.update(Message::InsertUnhovered(1), &session, &mut document, &settings);
+        screen.update(
+            Message::InsertUnhovered(1),
+            &session,
+            &mut document,
+            &settings,
+        );
         assert_eq!(screen.hovered_insert, None);
     }
 
@@ -1367,7 +1437,13 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
-        screen.update(Message::InsertHovered(2), &session, &mut document, &settings);
+        screen.update(
+            Message::InsertHovered(2),
+            &session,
+            &mut document,
+            &settings,
+        );
+        screen.update(Message::HoverTick, &session, &mut document, &settings);
         assert_eq!(screen.hovered_insert, Some(2), "the trailing insert point");
 
         screen.update(Message::RemoveSlot(1), &session, &mut document, &settings);
@@ -1376,6 +1452,62 @@ mod tests {
         assert_eq!(
             screen.hovered_insert, None,
             "the hovered point no longer exists after the removal"
+        );
+    }
+
+    #[test]
+    fn leaving_before_the_dwell_cancels_the_expansion() {
+        let session = session();
+        let settings = settings();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+
+        screen.update(
+            Message::InsertHovered(1),
+            &session,
+            &mut document,
+            &settings,
+        );
+        screen.update(
+            Message::InsertUnhovered(1),
+            &session,
+            &mut document,
+            &settings,
+        );
+        assert!(!screen.hover_pending(), "leaving cancels the dwell");
+        assert_eq!(screen.hovered_insert, None);
+
+        screen.update(Message::HoverTick, &session, &mut document, &settings);
+        assert_eq!(
+            screen.hovered_insert, None,
+            "the timer does not expand a point the cursor left"
+        );
+    }
+
+    #[test]
+    fn a_pending_hover_past_the_end_clears_on_refresh() {
+        let session = session();
+        let settings = settings();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        screen.update(
+            Message::InsertHovered(2),
+            &session,
+            &mut document,
+            &settings,
+        );
+        assert!(screen.hover_pending());
+
+        screen.update(Message::RemoveSlot(1), &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
+
+        assert_eq!(
+            screen.hover_pending, None,
+            "the pending expansion no longer exists after the removal"
         );
     }
 

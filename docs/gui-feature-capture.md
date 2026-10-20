@@ -57,8 +57,8 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
 - Slot band: one cell per slot, label is the degree label ("1", "b3", with a
   trailing apostrophe per octave above the anchor note or a trailing comma
   per octave below it) or "." for a rest; rest cells render dimmed, note
-  cells in the accent color; the selected slot carries an accent underline.
-  Click a cell to select it. Note cells also show the resolved SPN note name
+  cells in the accent color; every cell carries a quiet border, the selected
+  slot an accent border plus an accent underline. Click a cell to select it. Note cells also show the resolved SPN note name
   in the register the chunk currently sits in.
 - Board clicks write the selected slot: every position resolves — in-key
   positions store their degree, off-key positions store their spelled
@@ -88,11 +88,14 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
 - Each cell carries an "x" button at its top-right corner deleting that
   particular slot; the cursor tracks its slot — a deletion before it shifts
   it left, deleting past the end clamps it onto the new end.
-- The band's cells are separated by insert points that rest as hairline
-  rules and expand on hover to reveal a "+" inserting a rest slot there; a
-  trailing "+" compartment (accent, always visible, a touch wider) appends
-  one. Both are bounded by the max-slot count, and the cursor lands on the
-  fresh slot, so the next board click writes into it.
+- The band's cells are separated by insert points that rest as faint
+  hairline rules; hovering tints a rule to mark it interactive, and
+  dwelling on it for a short timer expands it to reveal a "+" inserting
+  a rest slot there, so passing over a point on the way to a cell never
+  re-flows the band; a trailing "+" compartment (accent, always visible,
+  a touch wider) appends one. Both are bounded by the max-slot count,
+  and the cursor lands on the fresh slot, so the next board click writes
+  into it.
 - Inspector row below the strip: Note/Rest toggle, degree dropdown (1–7),
   alteration toggle (b/n/#), octave toggle (0/1). Editing a slot that is a rest
   converts it into a note holding the edited value at its defaults.

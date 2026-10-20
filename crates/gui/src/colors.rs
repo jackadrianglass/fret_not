@@ -39,6 +39,10 @@ pub fn divider_color(theme: &Theme) -> Color {
     mix(theme.palette().background, theme.palette().text, 0.1)
 }
 
+pub fn cell_border(theme: &Theme) -> Color {
+    mix(theme.palette().background, theme.palette().text, 0.35)
+}
+
 // Everything the fretboard canvas paints, derived from the theme palette so
 // the board follows theme switches.
 pub struct CanvasColors {

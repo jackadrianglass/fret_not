@@ -15,6 +15,10 @@ plan, in one sitting). Verified against docs.rs and the compiler.
   resizable defaults to false, set it explicitly.
 - `iced::time::every` needs the `tokio` (or `smol`) cargo feature; `canvas`
   needs the `canvas` feature. Neither is on by default.
+- A `time::every` subscription gated on state is a one-shot timer: the
+  subscription fn re-runs after every message batch, so the handler
+  clearing the pending state turns the timer off (the edit screen's
+  insert-point hover expansion uses exactly this).
 
 ## Canvas
 

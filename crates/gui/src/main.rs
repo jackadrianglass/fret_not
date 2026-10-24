@@ -4,6 +4,7 @@ mod fretboard_canvas;
 mod model;
 mod screens;
 
+use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use iced::widget::{Stack, button, column, container, pick_list, row, slider, space, text};
@@ -64,10 +65,75 @@ impl Session {
     }
 }
 
+// A chunk in the document: the chunk itself plus its lineage. A variant
+// names the root chunk it was derived from, so its family can be grouped
+// and named. Lineage is flat by construction — a variant's parent is
+// always a root, never another variant.
+#[derive(Clone, PartialEq, Debug)]
+pub struct ChunkEntry {
+    pub chunk: Chunk,
+    pub variant_of: Option<usize>,
+}
+
+impl ChunkEntry {
+    pub fn root(chunk: Chunk) -> ChunkEntry {
+        ChunkEntry {
+            chunk,
+            variant_of: None,
+        }
+    }
+}
+
+impl Deref for ChunkEntry {
+    type Target = Chunk;
+
+    fn deref(&self) -> &Chunk {
+        &self.chunk
+    }
+}
+
+impl DerefMut for ChunkEntry {
+    fn deref_mut(&mut self) -> &mut Chunk {
+        &mut self.chunk
+    }
+}
+
+impl From<Chunk> for ChunkEntry {
+    fn from(chunk: Chunk) -> ChunkEntry {
+        ChunkEntry::root(chunk)
+    }
+}
+
 pub struct Document {
-    pub chunks: Vec<Chunk>,
+    pub chunks: Vec<ChunkEntry>,
     pub selected_chunk: usize,
     pub steps: Vec<Step>,
+}
+
+impl Document {
+    // The lineage slice the naming and family queries read: one optional
+    // root pointer per chunk.
+    pub fn lineage(&self) -> Vec<Option<usize>> {
+        self.chunks.iter().map(|entry| entry.variant_of).collect()
+    }
+
+    // The root of [chunk]'s family — the chunk itself for a root. Lineage
+    // is flat, so one step reaches it; the loop just keeps that honest.
+    pub fn root_of(&self, mut chunk: usize) -> usize {
+        while let Some(parent) = self.chunks[chunk].variant_of {
+            chunk = parent;
+        }
+        chunk
+    }
+
+    // The chunk's family: its root first, then the root's variants in
+    // creation (index) order.
+    pub fn family(&self, chunk: usize) -> Vec<usize> {
+        let root = self.root_of(chunk);
+        let mut family = vec![root];
+        family.extend((0..self.chunks.len()).filter(|&i| self.chunks[i].variant_of == Some(root)));
+        family
+    }
 }
 
 pub struct Step {
@@ -128,7 +194,7 @@ impl App {
         };
         let settings = Settings::default();
         let document = Document {
-            chunks: vec![model::initial_chunk(), model::second_chunk()],
+            chunks: vec![model::initial_chunk().into(), model::second_chunk().into()],
             selected_chunk: 0,
             steps: vec![
                 Step { chunk: 0, root: 1 },
@@ -222,7 +288,10 @@ fn update(state: &mut App, message: Message) {
             }
         }
         Message::ChunkAdded => {
-            state.document.chunks.push(Chunk::new(vec![Slot::Rest]));
+            state
+                .document
+                .chunks
+                .push(Chunk::new(vec![Slot::Rest]).into());
             state.document.selected_chunk = state.document.chunks.len() - 1;
             state.refresh_document();
         }
@@ -442,11 +511,12 @@ fn top_bar(state: &App) -> Element<'_, Message> {
 }
 
 fn library_rail(state: &App) -> Element<'_, Message> {
+    let names = model::chunk_names(&state.document.lineage());
     let mut list = column![].spacing(4);
     for (i, _chunk) in state.document.chunks.iter().enumerate() {
         let selected = i == state.document.selected_chunk;
         list = list.push(
-            button(text(model::chunk_name(i)))
+            button(text(names[i].clone()))
                 .width(Fill)
                 .on_press(Message::ChunkSelected(i))
                 .style(outlined(selected)),
@@ -520,6 +590,38 @@ mod tests {
         doubled.font_size = 32.0;
         assert_eq!(doubled.scale(16.0), 32.0);
         assert_eq!(doubled.scale(11.0), 22.0);
+    }
+
+    #[test]
+    fn a_family_is_its_root_then_its_variants_in_creation_order() {
+        let document = Document {
+            chunks: vec![
+                ChunkEntry::root(Chunk::new(vec![Slot::Rest])),
+                ChunkEntry::root(Chunk::new(vec![Slot::Rest])),
+                ChunkEntry {
+                    chunk: Chunk::new(vec![Slot::Rest]),
+                    variant_of: Some(0),
+                },
+                ChunkEntry {
+                    chunk: Chunk::new(vec![Slot::Rest]),
+                    variant_of: Some(0),
+                },
+            ],
+            selected_chunk: 2,
+            steps: Vec::new(),
+        };
+        assert_eq!(document.root_of(3), 0, "a variant's root is the root chunk");
+        assert_eq!(document.root_of(1), 1, "a root is its own root");
+        assert_eq!(
+            document.family(3),
+            vec![0, 2, 3],
+            "the root first, then its variants in creation order"
+        );
+        assert_eq!(
+            document.family(1),
+            vec![1],
+            "a variant-less root is alone in its family"
+        );
     }
 
     #[test]

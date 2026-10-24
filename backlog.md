@@ -8,17 +8,20 @@ Now that I have individual elements of the UI, I gotta figure out how to lay the
 in a sensible manner
 
 Thoughts here are
-- [ ] Have a whole page just to edit chunks
-- [ ] Have a whole page to make sequences from the chunks
+- [x] Have a whole page just to edit chunks
+- [x] Have a whole page to make sequences from the chunks
 
 # Chunk editor
 
 Right now, we have a super basic grid kind of editor. Wanna see how that might change
 
-- [ ] Have a better way to pick the notes that isn't a separate drop down
-- [ ] Have a quick way of creating new chunks (keyboard driven preferably)
-- [ ] Have a way to insert notes between others
+- [x] Have a better way to pick the notes that isn't a separate drop down
+- [x] Have a quick way of creating new chunks
+- [x] Have a way to insert notes between others
 - [ ] Have a variant list view
+
+Okay so now we're making the variants. It's basically copying the row and altering it.
+- How to manage if the original chunk changes? Defer for now
 
 # Sequencing editor
 

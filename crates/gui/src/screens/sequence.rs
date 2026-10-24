@@ -64,13 +64,16 @@ impl SequenceScreen {
 
     pub fn step_label(&self, document: &Document) -> String {
         match document.steps.get(self.step) {
-            Some(step) => format!(
-                "step {} / {} — chunk {} over {}",
-                self.step + 1,
-                document.steps.len(),
-                model::chunk_name(step.chunk),
-                model::roman(step.root)
-            ),
+            Some(step) => {
+                let names = model::chunk_names(&document.lineage());
+                format!(
+                    "step {} / {} — chunk {} over {}",
+                    self.step + 1,
+                    document.steps.len(),
+                    names[step.chunk],
+                    model::roman(step.root)
+                )
+            }
             None => "no steps".to_string(),
         }
     }
@@ -89,6 +92,7 @@ pub fn view<'a>(
     board: &'a BoardState,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
+    let names = model::chunk_names(&document.lineage());
     let mut cards = row![].spacing(6).align_y(Alignment::Center);
     for (i, step) in document.steps.iter().enumerate() {
         let chunk = &document.chunks[step.chunk];
@@ -104,7 +108,7 @@ pub fn view<'a>(
             text(model::roman(step.root))
                 .size(settings.scale(12.0))
                 .style(secondary),
-            text(model::chunk_name(step.chunk)).size(settings.scale(18.0)),
+            text(names[step.chunk].clone()).size(settings.scale(18.0)),
             text(glyphs)
                 .size(settings.scale(10.0))
                 .font(Font::MONOSPACE)

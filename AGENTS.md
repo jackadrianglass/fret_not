@@ -183,8 +183,10 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
 crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout prototype)
   main.rs                  the shell: App = Session (instrument/tonic/quality) +
                            Settings (theme/label mode/font size/solver fret cap) +
-                           Document (chunks + sequence steps, owned here and
-                           shared by every screen) + Playback; persistent chrome
+                           Document (chunks as ChunkEntry — a chunk plus its
+                           variant_of lineage, flat under one root — and sequence
+                           steps, owned here and shared by every screen) + Playback;
+                           persistent chrome
                            (top bar with nav, key/tempo config and playback
                            groups, collapsible chunk-library rail — hidden on the
                            settings page); screen views are routed in via .map
@@ -204,9 +206,15 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
                            fingerings are cached in update and go stale on any
                            document/session/settings change, which the shell fixes
                            by calling Screens::refresh
-    edit.rs                slot band (degree + resolved note name per cell) centered
-                           over the fingering board; board clicks write degrees into
-                           the selected slot, off-key clicks clear it to a rest
+    edit.rs                the edited chunk's family stacked as slot bands (root
+                           first, then each variant; label at left, the edited band
+                           accent-bordered and -labeled): every band is fully
+                           editable inline, and the board, stepper and rest toggle
+                           follow the edited chunk; "+ add variant" copies the
+                           edited chunk (slots + authored positions + octave base)
+                           parented to the root; board clicks write degrees into
+                           the edited chunk's selected slot, off-key clicks clear
+                           it to a rest
     tab.rs                  tab lines primary; chord/fingering steppers above, compact
                            board below; clicking a board dot jumps to a fingering
                            that plays it
@@ -221,8 +229,9 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
                            payloads (InstrumentPreset, LabelMode), BASE_FONT_SIZE,
                            board assembly over degrees_in_window +
                            spelled_degree_at (in-key dots and accidental dots),
-                           solve wiring, seed chunks/steps, chunk letters, romans —
-                           music knowledge stays in the core crates
+                           solve wiring, seed chunks/steps, chunk names from the
+                           lineage (roots lettered, variants numbered under their
+                           root), romans — music knowledge stays in the core crates
   fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; paints
                            from theme-derived CanvasColors, no state, no animation —
                            fret N's dot centers between the N-1 and N wires (where

@@ -100,6 +100,27 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   alteration toggle (b/n/#), octave toggle (0/1). Editing a slot that is a rest
   converts it into a note holding the edited value at its defaults.
 
+### Chunk variants
+
+- The edit page stacks the edited chunk's family as slot bands: the root
+  chunk's band first, then one band per variant underneath, all visible at
+  once (the stack scrolls vertically when it outgrows the space).
+- Each band is labeled at the left — roots lettered in order (A, B, …),
+  variants numbered under their root (A1, A2, …) — and is fully editable
+  inline: cells, insert points, per-cell delete, exactly like the root's band.
+- The edited band (the last one clicked) carries an accent border and an
+  accent label; the fretboard, the fingering stepper and the rest toggle all
+  follow it. Clicking another band's cell makes that chunk the edited one and
+  moves the cursor onto the clicked slot.
+- "+ add variant" at the bottom of the stack appends a variant: a copy of the
+  edited chunk (slots, authored display positions, octave base, solver cap) so
+  it opens sounding and looking identical, parented to the root. Lineage is
+  flat — a variant never has variants of its own; deriving from a variant
+  still parents to the root.
+- The chunk-library rail stays a flat list of every chunk (roots and
+  variants), named by the same lineage; sequence steps reference chunks by
+  index, and variants append at the end so existing references never shift.
+
 ## Tab viewing page
 
 - Tab rows: one line per string, labeled at the left with the string's absolute

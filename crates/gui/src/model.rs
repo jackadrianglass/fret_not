@@ -160,8 +160,32 @@ pub fn roman(root: i32) -> &'static str {
     ROMANS[(root - 1).rem_euclid(7) as usize]
 }
 
-pub fn chunk_name(index: usize) -> String {
-    char::from(b'A' + (index % 26) as u8).to_string()
+// Chunk labels from the lineage: roots are lettered in order, each variant
+// numbered under its root ("A", "A1", "A2", ...). A variant's parent is
+// always a root, processed earlier, so its letter is already known.
+pub fn chunk_names(lineage: &[Option<usize>]) -> Vec<String> {
+    let mut names = Vec::with_capacity(lineage.len());
+    let mut root_letter = vec![b'A'; lineage.len()];
+    let mut variant_count = vec![0usize; lineage.len()];
+    let mut next_root = 0usize;
+    for (i, &parent) in lineage.iter().enumerate() {
+        match parent {
+            None => {
+                root_letter[i] = b'A' + (next_root % 26) as u8;
+                next_root += 1;
+                names.push(char::from(root_letter[i]).to_string());
+            }
+            Some(root) => {
+                variant_count[root] += 1;
+                names.push(format!(
+                    "{}{}",
+                    char::from(root_letter[root]),
+                    variant_count[root]
+                ));
+            }
+        }
+    }
+    names
 }
 
 fn label_of(label_mode: LabelMode, key: Key, mode: Mode, dr: DegreeReference) -> String {
@@ -292,6 +316,17 @@ mod tests {
             "b3''"
         );
         assert_eq!(slot_label(DegreeReference::natural(7, -1)), "7,");
+    }
+
+    #[test]
+    fn chunk_names_letter_roots_and_number_variants_under_their_root() {
+        let lineage = [None, Some(0), Some(0), None, Some(3)];
+        assert_eq!(
+            chunk_names(&lineage),
+            vec!["A", "A1", "A2", "B", "B1"],
+            "roots lettered in order, variants numbered under their root"
+        );
+        assert_eq!(chunk_names(&[None, None]), vec!["A", "B"]);
     }
 
     #[test]

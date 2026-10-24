@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use absolute::spelled_pitch::SpelledPitch;
-use iced::widget::{Stack, button, column, container, mouse_area, row, text};
+use iced::widget::{Stack, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Element, Fill};
 
 use fretboard::chunk_solver;
@@ -16,7 +16,7 @@ use relative::key::Quality;
 use crate::board::{self, BoardState, Highlight};
 use crate::colors;
 use crate::model;
-use crate::{Document, Session, Settings};
+use crate::{ChunkEntry, Document, Session, Settings};
 
 const BOARD_HEIGHT: f32 = 260.0;
 
@@ -24,6 +24,7 @@ const BOARD_HEIGHT: f32 = 260.0;
 // chunk's octaves count from and the fingering being displayed — one
 // position per slot, set by the user's clicks and filled from the solve
 // once, sticky afterwards.
+#[derive(Clone)]
 struct ChunkEdit {
     // The key-anchored register of the chunk's anchor note — its first
     // note. Established by the first note written into the chunk (or by
@@ -45,24 +46,28 @@ pub struct EditScreen {
     edits: HashMap<usize, ChunkEdit>,
     solved: Vec<Fingering>,
     slot_notes: Vec<Option<usize>>,
-    // The displayed fingering: the selected chunk's positions, slot-aligned
+    // The displayed fingering: the edited chunk's positions, slot-aligned
     // in [edits] and projected here for the view.
     positions: Fingering,
     // Which member of [solved] is currently displayed — the stepper's
     // index, re-derived in refresh from [positions].
     fingering_index: Option<usize>,
-    // The insert point under the cursor, if any — the band's hover state,
-    // tracked per point so the hovered compartment can expand.
-    hovered_insert: Option<usize>,
+    // The insert point under the cursor, if any — a band's hover state,
+    // tracked per point (chunk, insert index) so the hovered compartment
+    // can expand.
+    hovered_insert: Option<(usize, usize)>,
     // The insert point whose expansion the hover timer will fire. The
     // compartment expands only after the cursor dwells on it, so passing
     // over a point on the way to a cell never re-flows the band.
-    hover_pending: Option<usize>,
+    hover_pending: Option<(usize, usize)>,
     // The chunk + session the caches were derived against; a change resets
     // the cursor and, on a key or instrument change, the click history —
     // stored positions are instrument-relative, so a new instrument
     // invalidates them exactly like a new key.
     anchored: Option<(usize, Instrument, SpelledPitch, Quality)>,
+    // Set when the cursor was explicitly placed on a freshly edited chunk
+    // (a band's cell click); refresh must not reset it to the first slot.
+    slot_pinned: bool,
 }
 
 // The index of the chunk's first note — the anchor note its octaves count
@@ -105,12 +110,13 @@ fn displayed_fret_span(edit: &ChunkEdit, chunk: &Chunk) -> i32 {
 #[derive(Debug, Clone)]
 pub enum Message {
     Board(board::Event),
-    SlotSelected(usize),
-    RemoveSlot(usize),
-    InsertSlot(usize),
-    InsertHovered(usize),
-    InsertUnhovered(usize),
+    SlotSelected { chunk: usize, slot: usize },
+    RemoveSlot { chunk: usize, slot: usize },
+    InsertSlot { chunk: usize, slot: usize },
+    InsertHovered { chunk: usize, slot: usize },
+    InsertUnhovered { chunk: usize, slot: usize },
     ToggleRest,
+    VariantCreated,
     FingeringPrev,
     FingeringNext,
     HoverTick,
@@ -128,6 +134,7 @@ impl EditScreen {
             hovered_insert: None,
             hover_pending: None,
             anchored: None,
+            slot_pinned: false,
         }
     }
 
@@ -137,11 +144,9 @@ impl EditScreen {
         self.hover_pending.is_some()
     }
 
-    // The selected chunk's octave reference register — the anchor note's.
-    fn base(&self, document: &Document) -> Option<i32> {
-        self.edits
-            .get(&document.selected_chunk)
-            .and_then(|edit| edit.base)
+    // The chunk's octave reference register — the anchor note's.
+    fn base_of(&self, chunk: usize) -> Option<i32> {
+        self.edits.get(&chunk).and_then(|edit| edit.base)
     }
 
     pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
@@ -166,14 +171,28 @@ impl EditScreen {
                 self.edits.clear();
             }
             self.anchored = Some(anchored);
-            self.slot = 0;
+            if !self.slot_pinned {
+                self.slot = 0;
+            }
+            self.slot_pinned = false;
         }
         let chunk = &document.chunks[document.selected_chunk];
-        // A hover left over from before a removal can point past the end.
-        if self.hovered_insert.is_some_and(|index| index > chunk.len()) {
+        // A hover left over from before a removal can point past its
+        // chunk's end.
+        let stale_hover = |point: Option<(usize, usize)>| {
+            point.is_some_and(|(chunk, slot)| {
+                document
+                    .chunks
+                    .get(chunk)
+                    .map(|entry| entry.len())
+                    .unwrap_or(0)
+                    < slot
+            })
+        };
+        if stale_hover(self.hovered_insert) {
             self.hovered_insert = None;
         }
-        if self.hover_pending.is_some_and(|index| index > chunk.len()) {
+        if stale_hover(self.hover_pending) {
             self.hover_pending = None;
         }
         let edit = self
@@ -283,63 +302,79 @@ impl EditScreen {
             Message::Board(board::Event::Clicked(position)) => {
                 write_position(self, session, document, settings, position)
             }
-            Message::SlotSelected(index) => {
-                let len = document.chunks[document.selected_chunk].len();
-                if len > 0 {
-                    self.slot = index.min(len - 1);
+            Message::SlotSelected { chunk, slot } => {
+                let Some(len) = document.chunks.get(chunk).map(|entry| entry.len()) else {
+                    return false;
+                };
+                // Clicking another band's cell edits that chunk and moves
+                // the cursor onto the clicked slot.
+                let switched = chunk != document.selected_chunk;
+                if switched {
+                    document.selected_chunk = chunk;
+                    self.slot_pinned = true;
                 }
+                self.slot = if len > 0 { slot.min(len - 1) } else { 0 };
+                switched
+            }
+            Message::InsertHovered { chunk, slot } => {
+                self.hover_pending = Some((chunk, slot));
                 false
             }
-            Message::InsertHovered(index) => {
-                self.hover_pending = Some(index);
-                false
-            }
-            Message::InsertUnhovered(index) => {
-                if self.hover_pending == Some(index) {
+            Message::InsertUnhovered { chunk, slot } => {
+                if self.hover_pending == Some((chunk, slot)) {
                     self.hover_pending = None;
                 }
-                if self.hovered_insert == Some(index) {
+                if self.hovered_insert == Some((chunk, slot)) {
                     self.hovered_insert = None;
                 }
                 false
             }
             Message::HoverTick => {
-                if let Some(index) = self.hover_pending.take() {
-                    self.hovered_insert = Some(index);
+                if let Some(point) = self.hover_pending.take() {
+                    self.hovered_insert = Some(point);
                 }
                 false
             }
-            Message::InsertSlot(index) => {
-                let chunk = &mut document.chunks[document.selected_chunk];
-                if chunk.len() >= model::MAX_SLOTS {
+            Message::InsertSlot { chunk, slot } => {
+                let Some(entry) = document.chunks.get_mut(chunk) else {
+                    return false;
+                };
+                if entry.len() >= model::MAX_SLOTS {
                     return false;
                 }
-                let index = index.min(chunk.len());
-                chunk::insert(chunk, index, Slot::Rest);
-                if let Some(edit) = self.edits.get_mut(&document.selected_chunk) {
-                    edit.positions.insert(index, None);
+                let slot = slot.min(entry.len());
+                chunk::insert(entry, slot, Slot::Rest);
+                if let Some(edit) = self.edits.get_mut(&chunk) {
+                    edit.positions.insert(slot, None);
                 }
-                // The cursor lands on the fresh slot: the next board click
-                // writes into it.
-                self.slot = index;
+                if chunk == document.selected_chunk {
+                    // The cursor lands on the fresh slot: the next board
+                    // click writes into it.
+                    self.slot = slot;
+                }
                 true
             }
-            Message::RemoveSlot(index) => {
-                let chunk = &mut document.chunks[document.selected_chunk];
-                if chunk.is_empty() {
+            Message::RemoveSlot { chunk, slot } => {
+                let Some(entry) = document.chunks.get_mut(chunk) else {
+                    return false;
+                };
+                if entry.is_empty() {
                     return false;
                 }
-                let index = index.min(chunk.len() - 1);
-                chunk::remove(chunk, index);
-                // The cursor tracks its slot: a deletion before it shifts it
-                // left; deleting past the end clamps it onto the new end.
-                if index < self.slot {
-                    self.slot -= 1;
+                let slot = slot.min(entry.len() - 1);
+                chunk::remove(entry, slot);
+                if chunk == document.selected_chunk {
+                    // The cursor tracks its slot: a deletion before it shifts
+                    // it left; deleting past the end clamps it onto the new
+                    // end.
+                    if slot < self.slot {
+                        self.slot -= 1;
+                    }
+                    self.slot = self.slot.min(entry.len().saturating_sub(1));
                 }
-                self.slot = self.slot.min(chunk.len().saturating_sub(1));
-                if let Some(edit) = self.edits.get_mut(&document.selected_chunk) {
-                    edit.positions.remove(index);
-                    reanchor(chunk, edit);
+                if let Some(edit) = self.edits.get_mut(&chunk) {
+                    edit.positions.remove(slot);
+                    reanchor(entry, edit);
                 }
                 true
             }
@@ -358,6 +393,26 @@ impl EditScreen {
                     edit.positions[index] = None;
                     reanchor(chunk, edit);
                 }
+                true
+            }
+            Message::VariantCreated => {
+                let selected = document.selected_chunk;
+                let root = document.root_of(selected);
+                let source = document.chunks[selected].clone();
+                let edit = self.edits.get(&selected).cloned();
+                let index = document.chunks.len();
+                document.chunks.push(ChunkEntry {
+                    chunk: source.chunk,
+                    variant_of: Some(root),
+                });
+                // The variant opens exactly where its source was left: the
+                // copied edit state carries its authored positions and
+                // octave base.
+                if let Some(edit) = edit {
+                    self.edits.insert(index, edit);
+                }
+                document.selected_chunk = index;
+                self.slot = 0;
                 true
             }
             Message::FingeringPrev => step_fingering(self, document, -1),
@@ -467,8 +522,8 @@ pub fn view<'a>(
     board: &'a BoardState,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
-    let chunk = &document.chunks[document.selected_chunk];
-    let base = screen.base(document);
+    let family = document.family(document.selected_chunk);
+    let names = model::chunk_names(&document.lineage());
 
     let stepper = row![
         button("prev").on_press(Message::FingeringPrev),
@@ -483,22 +538,30 @@ pub fn view<'a>(
     .spacing(8)
     .align_y(Alignment::Center);
 
-    let controls = row![
-        slot_band(screen, session, base, chunk, settings),
-        button("rest").on_press(Message::ToggleRest),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center);
+    // The rest toggle and the stepper serve the edited chunk, so they sit
+    // below the stack rather than beside one band.
+    let controls = row![button("rest").on_press(Message::ToggleRest), stepper]
+        .spacing(16)
+        .align_y(Alignment::Center);
 
-    let band = container(
-        column![controls, stepper]
-            .spacing(8)
-            .align_x(Alignment::Start),
-    )
-    .width(Fill)
-    .height(Fill)
-    .align_x(iced::alignment::Horizontal::Left)
-    .align_y(iced::alignment::Vertical::Top);
+    // The edited chunk's family stacked as slot bands: the root first,
+    // then each variant underneath, all visible at once.
+    let mut stack = column![].spacing(8);
+    for &index in &family {
+        stack = stack.push(band_row(
+            screen,
+            session,
+            document,
+            index,
+            names[index].clone(),
+            settings,
+        ));
+    }
+    stack = stack.push(
+        button(text("+ add variant").size(settings.scale(14.0)))
+            .on_press(Message::VariantCreated)
+            .style(trailing_style),
+    );
 
     let board_area = container(
         board::view(
@@ -513,11 +576,64 @@ pub fn view<'a>(
     )
     .height(BOARD_HEIGHT);
 
-    column![band, board_area]
-        .spacing(12)
-        .height(Fill)
-        .width(Fill)
-        .into()
+    column![
+        scrollable(stack).width(Fill).height(Fill),
+        controls,
+        board_area,
+    ]
+    .spacing(12)
+    .height(Fill)
+    .width(Fill)
+    .into()
+}
+
+// One chunk's band in the stack: its label, then its slot band. The
+// edited chunk's band carries the accent border and label; the board,
+// the stepper and the rest toggle all follow it.
+fn band_row<'a>(
+    screen: &'a EditScreen,
+    session: &'a Session,
+    document: &'a Document,
+    index: usize,
+    name: String,
+    settings: &'a Settings,
+) -> Element<'a, Message> {
+    let chunk = &document.chunks[index];
+    let edited = index == document.selected_chunk;
+    let base = screen.base_of(index);
+    let label = button(text(name).size(settings.scale(16.0)))
+        .on_press(Message::SlotSelected {
+            chunk: index,
+            slot: 0,
+        })
+        .style(move |theme, _status| label_style(theme, edited));
+    row![
+        container(label).width(settings.scale(28.0)),
+        slot_band(screen, session, base, chunk, index, edited, settings),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+fn label_style(theme: &iced::Theme, edited: bool) -> button::Style {
+    button::Style {
+        text_color: if edited {
+            colors::accent(theme)
+        } else {
+            colors::secondary_text(theme)
+        },
+        border: if edited {
+            iced::Border {
+                radius: 4.0.into(),
+                width: 2.0,
+                color: colors::accent(theme),
+            }
+        } else {
+            iced::Border::default()
+        },
+        ..button::Style::default()
+    }
 }
 
 // The selected slot's position on the board — its sticky display position.
@@ -545,12 +661,16 @@ fn accent(theme: &iced::Theme) -> iced::widget::text::Style {
     }
 }
 
-fn band_outline(theme: &iced::Theme) -> container::Style {
+fn band_outline(theme: &iced::Theme, edited: bool) -> container::Style {
     container::Style {
         border: iced::Border {
             radius: 6.0.into(),
             width: 1.0,
-            color: colors::divider_color(theme),
+            color: if edited {
+                colors::accent(theme)
+            } else {
+                colors::divider_color(theme)
+            },
         },
         ..container::Style::default()
     }
@@ -644,7 +764,8 @@ fn underline(selected: bool) -> impl Fn(&iced::Theme) -> iced::widget::rule::Sty
 // compartment can expand under the cursor; the wrapped button keeps the
 // click.
 fn insert_point<'a>(
-    index: usize,
+    chunk: usize,
+    slot: usize,
     hover: InsertHover,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
@@ -658,11 +779,11 @@ fn insert_point<'a>(
             .width(width)
             .height(Fill)
             .padding(0)
-            .on_press(Message::InsertSlot(index))
+            .on_press(Message::InsertSlot { chunk, slot })
             .style(move |theme, _status| insert_style(theme, hover)),
     )
-    .on_enter(Message::InsertHovered(index))
-    .on_exit(Message::InsertUnhovered(index))
+    .on_enter(Message::InsertHovered { chunk, slot })
+    .on_exit(Message::InsertUnhovered { chunk, slot })
     .into()
 }
 
@@ -671,12 +792,15 @@ fn slot_band<'a>(
     session: &'a Session,
     base: Option<i32>,
     chunk: &'a Chunk,
+    index: usize,
+    edited: bool,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
     let mut band = row![].align_y(Alignment::Center);
 
     for (i, slot) in chunk.iter().enumerate() {
-        let is_selected = i == screen.slot;
+        // The cursor underline marks the edited chunk's selected slot only.
+        let is_selected = edited && i == screen.slot;
         let cell = match slot {
             Slot::Note(dr) => {
                 let name = match base {
@@ -710,7 +834,10 @@ fn slot_band<'a>(
         // layer — the container passes clicks through to the cell below.
         let delete = button(text("×").size(settings.scale(10.0)))
             .padding(2)
-            .on_press(Message::RemoveSlot(i))
+            .on_press(Message::RemoveSlot {
+                chunk: index,
+                slot: i,
+            })
             .style(ghost);
         band = band.push(Stack::with_children(vec![
             button(cell.padding(iced::Padding {
@@ -719,7 +846,10 @@ fn slot_band<'a>(
                 bottom: 2.0,
                 left: 8.0,
             }))
-            .on_press(Message::SlotSelected(i))
+            .on_press(Message::SlotSelected {
+                chunk: index,
+                slot: i,
+            })
             .style(move |theme, status| cell_style(theme, status, is_selected))
             .into(),
             container(delete)
@@ -730,14 +860,14 @@ fn slot_band<'a>(
                 .into(),
         ]));
         if i + 1 < chunk.len() {
-            let hover = if screen.hovered_insert == Some(i + 1) {
+            let hover = if screen.hovered_insert == Some((index, i + 1)) {
                 InsertHover::Expanded
-            } else if screen.hover_pending == Some(i + 1) {
+            } else if screen.hover_pending == Some((index, i + 1)) {
                 InsertHover::Hovering
             } else {
                 InsertHover::Rest
             };
-            band = band.push(insert_point(i + 1, hover, settings));
+            band = band.push(insert_point(index, i + 1, hover, settings));
         }
     }
 
@@ -746,7 +876,10 @@ fn slot_band<'a>(
             .width(settings.scale(26.0))
             .height(Fill)
             .padding(0)
-            .on_press(Message::InsertSlot(chunk.len()))
+            .on_press(Message::InsertSlot {
+                chunk: index,
+                slot: chunk.len(),
+            })
             .style(trailing_style),
     );
 
@@ -755,7 +888,7 @@ fn slot_band<'a>(
     // row's height with their Fill.
     container(band.height(iced::Length::Shrink))
         .padding(4)
-        .style(band_outline)
+        .style(move |theme| band_outline(theme, edited))
         .into()
 }
 
@@ -780,7 +913,7 @@ mod tests {
 
     fn rests_document(slots: usize) -> Document {
         Document {
-            chunks: vec![Chunk::new(vec![Slot::Rest; slots])],
+            chunks: vec![Chunk::new(vec![Slot::Rest; slots]).into()],
             selected_chunk: 0,
             steps: Vec::new(),
         }
@@ -921,7 +1054,12 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         assert!(matches!(document.chunks[0][0], Slot::Note(_)));
 
-        screen.update(Message::SlotSelected(0), &session, &mut document, &settings);
+        screen.update(
+            Message::SlotSelected { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.update(Message::ToggleRest, &session, &mut document, &settings);
         screen.refresh(&session, &document, &settings);
         assert!(
@@ -969,7 +1107,10 @@ mod tests {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![Chunk::new(vec![Slot::Rest]), model::second_chunk()],
+            chunks: vec![
+                Chunk::new(vec![Slot::Rest]).into(),
+                model::second_chunk().into(),
+            ],
             selected_chunk: 0,
             steps: Vec::new(),
         };
@@ -984,7 +1125,7 @@ mod tests {
 
         assert_eq!(screen.slot, 0, "the cursor resets on a chunk switch");
         assert!(
-            screen.base(&document).is_some(),
+            screen.base_of(document.selected_chunk).is_some(),
             "the new chunk's anchor note establishes the base"
         );
     }
@@ -1027,7 +1168,12 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
-        screen.update(Message::SlotSelected(0), &session, &mut document, &settings);
+        screen.update(
+            Message::SlotSelected { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
@@ -1051,8 +1197,18 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
-        screen.update(Message::SlotSelected(0), &session, &mut document, &settings);
-        screen.update(Message::RemoveSlot(0), &session, &mut document, &settings);
+        screen.update(
+            Message::SlotSelected { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1071,7 +1227,7 @@ mod tests {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![model::second_chunk()],
+            chunks: vec![model::second_chunk().into()],
             selected_chunk: 0,
             steps: Vec::new(),
         };
@@ -1098,7 +1254,7 @@ mod tests {
         let session = session();
         let settings = settings();
         let document = Document {
-            chunks: vec![model::second_chunk()],
+            chunks: vec![model::second_chunk().into()],
             selected_chunk: 0,
             steps: Vec::new(),
         };
@@ -1136,7 +1292,10 @@ mod tests {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![Chunk::new(vec![Slot::Rest]), model::second_chunk()],
+            chunks: vec![
+                Chunk::new(vec![Slot::Rest]).into(),
+                model::second_chunk().into(),
+            ],
             selected_chunk: 0,
             steps: Vec::new(),
         };
@@ -1212,10 +1371,20 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
-        screen.update(Message::SlotSelected(1), &session, &mut document, &settings);
+        screen.update(
+            Message::SlotSelected { chunk: 0, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.update(Message::ToggleRest, &session, &mut document, &settings);
         screen.refresh(&session, &document, &settings);
-        screen.update(Message::RemoveSlot(1), &session, &mut document, &settings);
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
@@ -1237,8 +1406,18 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         click(&mut screen, &session, &mut document, &settings, pos(1, 0));
-        screen.update(Message::SlotSelected(2), &session, &mut document, &settings);
-        screen.update(Message::RemoveSlot(0), &session, &mut document, &settings);
+        screen.update(
+            Message::SlotSelected { chunk: 0, slot: 2 },
+            &session,
+            &mut document,
+            &settings,
+        );
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1270,7 +1449,12 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
-        screen.update(Message::RemoveSlot(2), &session, &mut document, &settings);
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 2 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1279,15 +1463,30 @@ mod tests {
         );
         assert_eq!(document.chunks[0].len(), 2);
 
-        screen.update(Message::RemoveSlot(1), &session, &mut document, &settings);
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
-        screen.update(Message::RemoveSlot(0), &session, &mut document, &settings);
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert!(document.chunks[0].is_empty(), "the last slot deletes too");
         assert_eq!(screen.edits[&0].positions, vec![]);
         assert!(
-            !screen.update(Message::RemoveSlot(0), &session, &mut document, &settings),
+            !screen.update(
+                Message::RemoveSlot { chunk: 0, slot: 0 },
+                &session,
+                &mut document,
+                &settings
+            ),
             "deleting from an empty chunk is a no-op"
         );
     }
@@ -1302,7 +1501,12 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
-        screen.update(Message::InsertSlot(1), &session, &mut document, &settings);
+        screen.update(
+            Message::InsertSlot { chunk: 0, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1331,7 +1535,15 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         let len = document.chunks[0].len();
-        screen.update(Message::InsertSlot(len), &session, &mut document, &settings);
+        screen.update(
+            Message::InsertSlot {
+                chunk: 0,
+                slot: len,
+            },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(document.chunks[0].len(), len + 1, "appended");
@@ -1352,7 +1564,12 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
-        screen.update(Message::InsertSlot(0), &session, &mut document, &settings);
+        screen.update(
+            Message::InsertSlot { chunk: 0, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1375,7 +1592,12 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert!(
-            !screen.update(Message::InsertSlot(0), &session, &mut document, &settings),
+            !screen.update(
+                Message::InsertSlot { chunk: 0, slot: 0 },
+                &session,
+                &mut document,
+                &settings
+            ),
             "a full chunk rejects insertion"
         );
         assert_eq!(document.chunks[0].len(), model::MAX_SLOTS);
@@ -1391,7 +1613,7 @@ mod tests {
 
         assert!(
             !screen.update(
-                Message::InsertHovered(1),
+                Message::InsertHovered { chunk: 0, slot: 1 },
                 &session,
                 &mut document,
                 &settings
@@ -1405,22 +1627,22 @@ mod tests {
         assert!(screen.hover_pending(), "the expansion is scheduled");
 
         screen.update(Message::HoverTick, &session, &mut document, &settings);
-        assert_eq!(screen.hovered_insert, Some(1));
+        assert_eq!(screen.hovered_insert, Some((0, 1)));
 
         screen.update(
-            Message::InsertUnhovered(2),
+            Message::InsertUnhovered { chunk: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
         );
         assert_eq!(
             screen.hovered_insert,
-            Some(1),
+            Some((0, 1)),
             "another point's exit does not clear the hover"
         );
 
         screen.update(
-            Message::InsertUnhovered(1),
+            Message::InsertUnhovered { chunk: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1438,15 +1660,24 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         screen.update(
-            Message::InsertHovered(2),
+            Message::InsertHovered { chunk: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
         );
         screen.update(Message::HoverTick, &session, &mut document, &settings);
-        assert_eq!(screen.hovered_insert, Some(2), "the trailing insert point");
+        assert_eq!(
+            screen.hovered_insert,
+            Some((0, 2)),
+            "the trailing insert point"
+        );
 
-        screen.update(Message::RemoveSlot(1), &session, &mut document, &settings);
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1464,13 +1695,13 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         screen.update(
-            Message::InsertHovered(1),
+            Message::InsertHovered { chunk: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
         );
         screen.update(
-            Message::InsertUnhovered(1),
+            Message::InsertUnhovered { chunk: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1495,14 +1726,19 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         screen.update(
-            Message::InsertHovered(2),
+            Message::InsertHovered { chunk: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
         );
         assert!(screen.hover_pending());
 
-        screen.update(Message::RemoveSlot(1), &session, &mut document, &settings);
+        screen.update(
+            Message::RemoveSlot { chunk: 0, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1634,6 +1870,177 @@ mod tests {
         assert_eq!(
             screen.solved, catalog,
             "stepping does not re-resolve or re-rank the catalog"
+        );
+    }
+
+    #[test]
+    fn creating_a_variant_copies_the_chunk_and_its_edit_state() {
+        let session = session();
+        let settings = settings();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
+
+        assert!(
+            screen.update(Message::VariantCreated, &session, &mut document, &settings),
+            "creating a variant changes the document"
+        );
+        screen.refresh(&session, &document, &settings);
+
+        assert_eq!(document.chunks.len(), 2);
+        assert_eq!(
+            document.chunks[1].variant_of,
+            Some(0),
+            "the variant is parented to the root"
+        );
+        assert_eq!(
+            document.chunks[1].chunk, document.chunks[0].chunk,
+            "the variant copies the chunk's slots"
+        );
+        assert_eq!(
+            screen.edits[&1].positions, screen.edits[&0].positions,
+            "the authored positions carry over"
+        );
+        assert_eq!(
+            screen.edits[&1].base, screen.edits[&0].base,
+            "the octave base carries over"
+        );
+        assert_eq!(
+            document.selected_chunk, 1,
+            "the variant becomes the edited chunk"
+        );
+        assert_eq!(screen.slot, 0, "the cursor resets onto the variant");
+        assert_eq!(
+            screen.positions,
+            Fingering::new(vec![pos(0, 0), pos(0, 12)]),
+            "the variant opens displaying exactly where its source was"
+        );
+    }
+
+    #[test]
+    fn a_variant_made_from_a_variant_still_parents_to_the_root() {
+        let session = session();
+        let settings = settings();
+        let mut document = rests_document(1);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+
+        screen.update(Message::VariantCreated, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
+        screen.update(Message::VariantCreated, &session, &mut document, &settings);
+        screen.refresh(&session, &document, &settings);
+
+        assert_eq!(document.chunks.len(), 3);
+        assert_eq!(document.chunks[1].variant_of, Some(0));
+        assert_eq!(
+            document.chunks[2].variant_of,
+            Some(0),
+            "a variant of a variant is still parented to the root — lineage is flat"
+        );
+        assert_eq!(
+            document.family(2),
+            vec![0, 1, 2],
+            "every variant stacks under the one root"
+        );
+        assert_eq!(
+            model::chunk_names(&document.lineage()),
+            vec!["A", "A1", "A2"],
+            "variants are numbered under their root"
+        );
+    }
+
+    #[test]
+    fn clicking_another_bands_cell_edits_that_chunk_at_that_slot() {
+        let session = session();
+        let settings = settings();
+        let mut document = Document {
+            chunks: vec![
+                Chunk::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
+                model::second_chunk().into(),
+            ],
+            selected_chunk: 0,
+            steps: Vec::new(),
+        };
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+
+        let switched = screen.update(
+            Message::SlotSelected { chunk: 1, slot: 1 },
+            &session,
+            &mut document,
+            &settings,
+        );
+        screen.refresh(&session, &document, &settings);
+
+        assert!(switched, "switching the edited chunk is a document change");
+        assert_eq!(document.selected_chunk, 1);
+        assert_eq!(screen.slot, 1, "the cursor lands on the clicked cell");
+    }
+
+    #[test]
+    fn clicking_the_edited_bands_cell_only_moves_the_cursor() {
+        let session = session();
+        let settings = settings();
+        let mut document = rests_document(3);
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+
+        let switched = screen.update(
+            Message::SlotSelected { chunk: 0, slot: 2 },
+            &session,
+            &mut document,
+            &settings,
+        );
+
+        assert!(!switched, "no document change, no refresh needed");
+        assert_eq!(document.selected_chunk, 0);
+        assert_eq!(screen.slot, 2);
+    }
+
+    #[test]
+    fn edits_to_another_band_leave_the_edited_chunk_and_cursor_alone() {
+        let session = session();
+        let settings = settings();
+        let mut document = Document {
+            chunks: vec![
+                Chunk::new(vec![Slot::Rest]).into(),
+                model::second_chunk().into(),
+            ],
+            selected_chunk: 0,
+            steps: Vec::new(),
+        };
+        let mut screen = EditScreen::new();
+        screen.refresh(&session, &document, &settings);
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
+        assert_eq!(screen.slot, 2, "the cursor sits on the trailing rest");
+
+        screen.update(
+            Message::RemoveSlot { chunk: 1, slot: 0 },
+            &session,
+            &mut document,
+            &settings,
+        );
+        screen.refresh(&session, &document, &settings);
+
+        assert_eq!(
+            document.chunks[1].len(),
+            1,
+            "the other band's slot is removed"
+        );
+        assert_eq!(document.selected_chunk, 0, "the edited chunk is unchanged");
+        assert_eq!(screen.slot, 2, "the cursor is unchanged");
+        assert_eq!(
+            document.chunks[0]
+                .iter()
+                .map(|slot| octave_of(*slot))
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1), None],
+            "the edited chunk's slots are unchanged"
         );
     }
 }

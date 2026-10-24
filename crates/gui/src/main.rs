@@ -22,7 +22,7 @@ use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
-        .title("fret_not [tab v1]")
+        .title("fret_not [tab v4]")
         .theme(theme)
         .subscription(subscription)
         .window(iced::window::Settings {
@@ -195,8 +195,13 @@ impl App {
         };
         let settings = Settings::default();
         let document = Document {
-            chunks: vec![model::initial_chunk().into(), model::second_chunk().into()],
-            selected_chunk: 0,
+            chunks: vec![
+                model::initial_chunk().into(),
+                model::second_chunk().into(),
+                model::phrase_chunk().into(),
+            ],
+            // The placeholder phrase chunk — the tab screen's rhythmic demo.
+            selected_chunk: 2,
             steps: vec![
                 Step { chunk: 0, root: 1 },
                 Step { chunk: 0, root: 4 },
@@ -541,17 +546,19 @@ mod tests {
     #[test]
     fn switching_screens_keeps_the_document_intact() {
         let mut app = App::new();
+        let chunk_count = app.document.chunks.len();
         update(&mut app, Message::ScreenChanged(ScreenKind::Tab));
         assert_eq!(app.active, ScreenKind::Tab);
-        assert_eq!(app.document.chunks.len(), 2);
+        assert_eq!(app.document.chunks.len(), chunk_count);
     }
 
     #[test]
     fn the_settings_page_keeps_the_document_and_the_rail_state() {
         let mut app = App::new();
+        let chunk_count = app.document.chunks.len();
         update(&mut app, Message::ScreenChanged(ScreenKind::Settings));
         assert_eq!(app.active, ScreenKind::Settings);
-        assert_eq!(app.document.chunks.len(), 2);
+        assert_eq!(app.document.chunks.len(), chunk_count);
         assert!(app.rail_open, "the rail state survives the settings page");
     }
 
@@ -628,6 +635,8 @@ mod tests {
     #[test]
     fn a_board_click_rewrites_the_selected_slot() {
         let mut app = App::new();
+        // Select the chunk explicitly — the default selection is a placeholder.
+        update(&mut app, Message::ChunkSelected(0));
         let tonic_position = fretboard::fretboard_position::FretboardPosition {
             string_index: 0,
             fret: 0,

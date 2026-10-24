@@ -9,8 +9,8 @@ use crate::model;
 use crate::tab_canvas::{self, TabCanvas};
 use crate::{Document, Session, Settings};
 
-// One bar per four slots — slots are equal-duration, so a bar reads as 4/4.
-const COLUMNS_PER_BAR: usize = 4;
+// One bar per eight slots — slots are eighth notes, so a bar reads as 4/4.
+const COLUMNS_PER_BAR: usize = 8;
 
 pub struct TabScreen {
     chord_index: usize,
@@ -96,15 +96,25 @@ impl TabScreen {
     }
 }
 
+// The staff's column count: whole bars only. A trailing partial bar is
+// padded with rest columns up to the bar grid, so every bar is the same
+// size and the grid stays aligned.
+fn padded_columns(slots: usize, columns_per_bar: usize) -> usize {
+    let per_bar = columns_per_bar.max(1);
+    slots.div_ceil(per_bar) * per_bar
+}
+
 // The fret grid the tab paints: one row per string, one column per slot,
 // None where the string does not sound in that slot — a rest, or a note
-// played on another string.
+// played on another string. The grid spans [columns] columns, which may
+// outrun the slots when a partial bar is padded.
 fn fret_grid(
     fingering: &Fingering,
     slot_notes: &[Option<usize>],
     string_count: usize,
+    columns: usize,
 ) -> Vec<Vec<Option<i32>>> {
-    let mut grid = vec![vec![None; slot_notes.len()]; string_count];
+    let mut grid = vec![vec![None; columns]; string_count];
     for (slot, note) in slot_notes.iter().enumerate() {
         if let Some(position) = note.and_then(|index| fingering.get(index).copied())
             && let Some(row) = grid.get_mut(position.string_index)
@@ -148,11 +158,19 @@ pub fn view<'a>(
     let open_notes = (0..string_count)
         .map(|string_index| tuning::open_note(&session.instrument.tuning, string_index).to_string())
         .collect();
+    let columns = padded_columns(chunk.len(), COLUMNS_PER_BAR);
+    let mut rests: Vec<bool> = screen
+        .slot_notes
+        .iter()
+        .map(|slot| slot.is_none())
+        .collect();
+    rests.resize(columns, true);
     let staff = TabCanvas {
         string_count,
         open_notes,
-        columns: chunk.len(),
-        frets: fret_grid(&fingering, &screen.slot_notes, string_count),
+        columns,
+        frets: fret_grid(&fingering, &screen.slot_notes, string_count, columns),
+        rests,
         columns_per_bar: COLUMNS_PER_BAR,
         font_size: settings.font_size,
     };
@@ -193,10 +211,22 @@ mod tests {
     }
 
     #[test]
+    fn the_staff_pads_a_partial_bar_to_whole_bars() {
+        assert_eq!(
+            padded_columns(12, 8),
+            16,
+            "a bar and a half pads to two bars"
+        );
+        assert_eq!(padded_columns(8, 8), 8, "a full bar stays as it is");
+        assert_eq!(padded_columns(4, 8), 8, "a half bar pads to one bar");
+        assert_eq!(padded_columns(0, 8), 0, "no slots, no staff");
+    }
+
+    #[test]
     fn notes_land_on_their_string_row_and_rests_leave_columns_empty() {
         let fingering = Fingering::new(vec![pos(2, 5), pos(0, 12)]);
         let slot_notes = vec![Some(0), None, Some(1)];
-        let grid = fret_grid(&fingering, &slot_notes, 6);
+        let grid = fret_grid(&fingering, &slot_notes, 6, slot_notes.len());
         assert_eq!(grid.len(), 6, "one row per string");
         assert_eq!(grid[2][0], Some(5), "the first note on its string's row");
         assert_eq!(
@@ -218,10 +248,23 @@ mod tests {
     #[test]
     fn positions_beyond_the_string_count_paint_nothing() {
         let fingering = Fingering::new(vec![pos(9, 3)]);
-        let grid = fret_grid(&fingering, &[Some(0)], 6);
+        let grid = fret_grid(&fingering, &[Some(0)], 6, 1);
         assert!(
             grid.iter().flatten().all(|cell| cell.is_none()),
             "a position off the instrument's strings paints nothing"
+        );
+    }
+
+    #[test]
+    fn padding_columns_stay_empty() {
+        let fingering = Fingering::new(vec![pos(2, 5)]);
+        let grid = fret_grid(&fingering, &[Some(0)], 6, 8);
+        assert_eq!(grid[0].len(), 8, "the grid spans the padded bars");
+        assert_eq!(grid[2][0], Some(5));
+        assert!(
+            grid.iter()
+                .all(|row| row[1..].iter().all(|cell| cell.is_none())),
+            "padding columns carry no frets"
         );
     }
 }

@@ -252,6 +252,27 @@ pub fn second_chunk() -> Chunk {
     ])
 }
 
+// The placeholder phrase: twelve slots of eighth notes — a bar and a half,
+// so the tab shows an internal bar line — and the tab screen's
+// rhythmic-notation demo. Placeholder content; the demo needs the beams, a
+// flag, a rest, and a bar line, not any particular pitches.
+pub fn phrase_chunk() -> Chunk {
+    Chunk::new(vec![
+        Slot::Note(DegreeReference::natural(1, 0)),
+        Slot::Note(DegreeReference::natural(2, 0)),
+        Slot::Note(DegreeReference::natural(3, 0)),
+        Slot::Note(DegreeReference::natural(5, 0)),
+        Slot::Rest,
+        Slot::Note(DegreeReference::natural(6, 0)),
+        Slot::Note(DegreeReference::natural(5, 0)),
+        Slot::Note(DegreeReference::natural(3, 0)),
+        Slot::Note(DegreeReference::natural(4, 0)),
+        Slot::Note(DegreeReference::natural(3, 0)),
+        Slot::Note(DegreeReference::natural(2, 0)),
+        Slot::Note(DegreeReference::natural(1, 0)),
+    ])
+}
+
 // Every fingering of the chunk over one chord root, ranked by reach distance
 // from [anchor] with consecutive moves within [fret_cap] frets, plus the
 // slot-to-note index map (None for rests) that aligns the chunk's slots with

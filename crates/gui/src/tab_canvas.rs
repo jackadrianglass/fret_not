@@ -16,6 +16,22 @@ const TOP_PAD: f32 = 16.0;
 const FRET_SIZE: f32 = 12.0;
 const LABEL_SIZE: f32 = 11.0;
 
+// The meter: slots are eighth notes, so a 4/4 bar is eight of them and a
+// beat is two.
+const BEATS_PER_BAR: usize = 4;
+// Rhythm-row design sizes, scaled off the font-size setting like the staff.
+// The rhythm gap is the notehead line's clearance above the top string —
+// the detachment between the rhythm row and the tab staff.
+const RHYTHM_GAP: f32 = 26.0;
+const STEM_HEIGHT: f32 = 30.0;
+const BEAM_THICKNESS: f32 = 2.5;
+const NOTEHEAD_RADIUS: f32 = 4.5;
+const FLAG_LENGTH: f32 = 9.0;
+const FLAG_DROP: f32 = 12.0;
+const REST_HEIGHT: f32 = 14.0;
+const REST_BALL: f32 = 1.8;
+const TIME_SIG_SIZE: f32 = 14.0;
+
 // The tab canvas is paint-only for now; the event type exists so the screen
 // can map the canvas into its own Message — the seam tab interaction will
 // plug into later.
@@ -23,8 +39,8 @@ const LABEL_SIZE: f32 = 11.0;
 pub enum Event {}
 
 // The tab staff: one line per string in tab order, fret numbers in time
-// columns, bar lines closing each bar. The screen builds the fret grid; the
-// canvas only paints.
+// columns, bar lines closing each bar, and a rhythm row notating the slots
+// above. The screen builds the fret grid; the canvas only paints.
 pub struct TabCanvas {
     pub string_count: usize,
     // The open-note SPN label per string, drawn at the left of its row.
@@ -33,14 +49,71 @@ pub struct TabCanvas {
     // The fret grid: [string_index][column], None where the string does not
     // sound in that column — a rest, or a note played on another string.
     pub frets: Vec<Vec<Option<i32>>>,
+    // Per column: true where the slot is a rest — drives the rhythm row.
+    pub rests: Vec<bool>,
     pub columns_per_bar: usize,
     // The base font size; the design sizes scale off it.
     pub font_size: f32,
 }
 
+// How the rhythm row notates the note columns: beams connect the stems of
+// consecutive notes within a beat; a note alone in its beat gets a flag.
+struct BeamPlan {
+    // Inclusive column ranges whose stems one beam connects.
+    beams: Vec<(usize, usize)>,
+    // Columns whose single note carries a flag instead of a beam.
+    flags: Vec<usize>,
+}
+
+// Slots are eighth notes: [slots_per_beat] of them tile the bar into beats,
+// and beams group the notes within each beat. A rest breaks the group, so a
+// lone note in a beat is flagged rather than beamed, and no beam ever
+// crosses a beat (or bar) boundary.
+fn beam_plan(rests: &[bool], slots_per_beat: usize) -> BeamPlan {
+    let slots_per_beat = slots_per_beat.max(1);
+    let mut plan = BeamPlan {
+        beams: Vec::new(),
+        flags: Vec::new(),
+    };
+    let mut column = 0;
+    while column < rests.len() {
+        let beat_end = (column + slots_per_beat).min(rests.len());
+        let mut run = None;
+        for (offset, &rest) in rests[column..beat_end].iter().enumerate() {
+            if rest {
+                if let Some(start) = run.take() {
+                    close_run(&mut plan, start, column + offset - 1);
+                }
+            } else if run.is_none() {
+                run = Some(column + offset);
+            }
+        }
+        if let Some(start) = run {
+            close_run(&mut plan, start, beat_end - 1);
+        }
+        column = beat_end;
+    }
+    plan
+}
+
+// A run of one note cannot beam — it carries a flag instead.
+fn close_run(plan: &mut BeamPlan, start: usize, end: usize) {
+    if start == end {
+        plan.flags.push(start);
+    } else {
+        plan.beams.push((start, end));
+    }
+}
+
 struct Geometry {
     left: f32,
     top: f32,
+    // The rhythm row rides above the staff: noteheads on [rhythm_y], stems
+    // rising to [stem_top], where the beams sit.
+    rhythm_y: f32,
+    stem_top: f32,
+    notehead_radius: f32,
+    beam_thickness: f32,
     rows: usize,
     columns: usize,
     columns_per_bar: usize,
@@ -59,9 +132,21 @@ impl Geometry {
         let column_width = COLUMN_WIDTH * scale;
         let row_gap = ROW_GAP * scale;
         let staff_height = string_count.saturating_sub(1) as f32 * row_gap;
+        let rhythm_gap = RHYTHM_GAP * scale;
+        let stem_height = STEM_HEIGHT * scale;
+        let beam_thickness = BEAM_THICKNESS * scale;
+        let notehead_radius = NOTEHEAD_RADIUS * scale;
+        let rhythm_block = rhythm_gap + stem_height + beam_thickness;
+        let block_top = ((bounds.height - (rhythm_block + staff_height)) * 0.5).max(TOP_PAD);
+        let stem_top = block_top + beam_thickness * 0.5;
+        let rhythm_y = stem_top + stem_height;
         Geometry {
             left: LABEL_GUTTER,
-            top: ((bounds.height - staff_height) * 0.5).max(TOP_PAD),
+            top: rhythm_y + rhythm_gap,
+            rhythm_y,
+            stem_top,
+            notehead_radius,
+            beam_thickness,
             rows: string_count,
             columns,
             columns_per_bar,
@@ -73,6 +158,11 @@ impl Geometry {
     // The center of a column's cell.
     fn column_x(&self, column: usize) -> f32 {
         self.left + (column as f32 + 0.5) * self.column_width
+    }
+
+    // A stem rises from the right edge of its column's notehead.
+    fn stem_x(&self, column: usize) -> f32 {
+        self.column_x(column) + self.notehead_radius
     }
 
     // Tab convention: the highest string is the top row, so [string_index]
@@ -153,17 +243,120 @@ impl TabCanvas {
             );
         }
 
+        // Bar lines span the whole system — the rhythm row down to the
+        // bottom string.
         for x in g.bar_xs() {
             frame.stroke(
-                &canvas::Path::line(
-                    Point::new(x, g.string_y(last)),
-                    Point::new(x, g.string_y(0)),
-                ),
+                &canvas::Path::line(Point::new(x, g.stem_top), Point::new(x, g.string_y(0))),
                 canvas::Stroke::default()
                     .with_color(c.bar_line)
                     .with_width(1.5),
             );
         }
+    }
+
+    // The rhythm row above the staff: a one-line staff carrying the meter,
+    // with each slot's eighth note as a notehead and stem — beamed to its
+    // beat-mates, flagged when alone in its beat, and an eighth-rest glyph
+    // on a rest.
+    fn draw_rhythm(&self, frame: &mut canvas::Frame, g: &Geometry, c: &TabColors) {
+        let right = g.left + self.columns as f32 * g.column_width;
+        let slots_per_beat = (self.columns_per_bar / BEATS_PER_BAR).max(1);
+
+        frame.stroke(
+            &canvas::Path::line(
+                Point::new(g.left, g.rhythm_y),
+                Point::new(right, g.rhythm_y),
+            ),
+            canvas::Stroke::default()
+                .with_color(c.bar_line)
+                .with_width(1.0),
+        );
+        frame.fill_text(canvas::Text {
+            content: format!("{}/4", BEATS_PER_BAR),
+            position: Point::new(4.0, g.rhythm_y),
+            color: c.open_note,
+            size: self.scaled(TIME_SIG_SIZE).into(),
+            align_x: Alignment::Left,
+            align_y: iced::alignment::Vertical::Center,
+            ..canvas::Text::default()
+        });
+
+        for column in 0..self.columns {
+            if self.rests.get(column).copied().unwrap_or(true) {
+                self.draw_rest(frame, g, c, column);
+                continue;
+            }
+            frame.fill(
+                &canvas::Path::circle(
+                    Point::new(g.column_x(column), g.rhythm_y),
+                    g.notehead_radius,
+                ),
+                c.fret_number,
+            );
+            frame.stroke(
+                &canvas::Path::line(
+                    Point::new(g.stem_x(column), g.rhythm_y),
+                    Point::new(g.stem_x(column), g.stem_top),
+                ),
+                canvas::Stroke::default()
+                    .with_color(c.fret_number)
+                    .with_width(1.2),
+            );
+        }
+
+        let plan = beam_plan(&self.rests, slots_per_beat);
+        let beam_half = g.beam_thickness * 0.5;
+        for &(start, end) in &plan.beams {
+            frame.fill(
+                &canvas::Path::rectangle(
+                    Point::new(g.stem_x(start), g.stem_top - beam_half),
+                    Size::new(g.stem_x(end) - g.stem_x(start), g.beam_thickness),
+                ),
+                c.fret_number,
+            );
+        }
+        let flag_length = self.scaled(FLAG_LENGTH);
+        let flag_drop = self.scaled(FLAG_DROP);
+        for &column in &plan.flags {
+            frame.stroke(
+                &canvas::Path::line(
+                    Point::new(g.stem_x(column), g.stem_top),
+                    Point::new(g.stem_x(column) + flag_length, g.stem_top + flag_drop),
+                ),
+                canvas::Stroke::default()
+                    .with_color(c.fret_number)
+                    .with_width(1.2),
+            );
+        }
+    }
+
+    // The eighth rest: a ball with a curved sweep down to a small hook. Drawn
+    // rather than a font glyph — the default font is a platform sans-serif
+    // with no guaranteed musical-symbol coverage, and a missing glyph paints
+    // as tofu.
+    fn draw_rest(&self, frame: &mut canvas::Frame, g: &Geometry, c: &TabColors, column: usize) {
+        let x = g.column_x(column);
+        let height = self.scaled(REST_HEIGHT);
+        let ball = Point::new(x - height * 0.1, g.rhythm_y - height * 0.6);
+        frame.fill(
+            &canvas::Path::circle(ball, self.scaled(REST_BALL)),
+            c.fret_number,
+        );
+        let sweep = canvas::Path::new(|builder| {
+            builder.move_to(ball);
+            builder.quadratic_curve_to(
+                Point::new(x + height * 0.4, g.rhythm_y + height * 0.05),
+                Point::new(x + height * 0.15, g.rhythm_y + height * 0.3),
+            );
+            builder.line_to(Point::new(x - height * 0.05, g.rhythm_y + height * 0.42));
+        });
+        frame.stroke(
+            &sweep,
+            canvas::Stroke::default()
+                .with_color(c.fret_number)
+                .with_width(1.2),
+        );
     }
 
     // The fret numbers, centered on their string line in their column. The
@@ -227,6 +420,7 @@ impl canvas::Program<Event, Theme, Renderer> for TabCanvas {
         let c = TabColors::of(theme);
 
         self.draw_staff(&mut frame, &g, &c);
+        self.draw_rhythm(&mut frame, &g, &c);
         self.draw_numbers(&mut frame, &g, &c);
 
         vec![frame.into_geometry()]
@@ -299,11 +493,83 @@ mod tests {
     }
 
     #[test]
+    fn the_rhythm_row_rides_above_the_staff() {
+        let g = Geometry::new(bounds(800.0, 200.0), 6, 8, 8, 1.0);
+        assert_eq!(
+            g.rhythm_y,
+            g.top - RHYTHM_GAP,
+            "the noteheads sit one gap above the top string"
+        );
+        assert_eq!(
+            g.stem_top,
+            g.rhythm_y - STEM_HEIGHT,
+            "the stems rise from the noteheads to the beam level"
+        );
+    }
+
+    #[test]
     fn the_staff_centers_vertically_and_scales_with_the_font_size() {
-        let g = Geometry::new(bounds(800.0, 200.0), 6, 4, 4, 1.0);
-        assert_eq!(g.top, (200.0 - 5.0 * g.row_gap) * 0.5);
-        let doubled = Geometry::new(bounds(800.0, 200.0), 6, 4, 4, 2.0);
+        let g = Geometry::new(bounds(800.0, 400.0), 6, 4, 4, 1.0);
+        let rhythm_block = RHYTHM_GAP + STEM_HEIGHT + BEAM_THICKNESS;
+        let content = rhythm_block + 5.0 * g.row_gap;
+        assert_eq!(
+            g.top,
+            (400.0 - content) * 0.5 + rhythm_block - BEAM_THICKNESS * 0.5
+        );
+        let doubled = Geometry::new(bounds(800.0, 400.0), 6, 4, 4, 2.0);
         assert_eq!(doubled.row_gap, g.row_gap * 2.0);
         assert_eq!(doubled.column_width, g.column_width * 2.0);
+        assert_eq!(doubled.rhythm_y - doubled.stem_top, STEM_HEIGHT * 2.0);
+    }
+
+    #[test]
+    fn eighths_beam_per_beat_and_a_rest_breaks_the_beam() {
+        // The demo phrase: 1 2 3 5 (rest) 6 5 3.
+        let plan = beam_plan(&[false, false, false, false, true, false, false, false], 2);
+        assert_eq!(plan.beams, vec![(0, 1), (2, 3), (6, 7)]);
+        assert_eq!(
+            plan.flags,
+            vec![5],
+            "the note alone in its beat carries a flag"
+        );
+    }
+
+    #[test]
+    fn beams_break_at_beat_boundaries_including_bar_lines() {
+        let plan = beam_plan(&[false; 12], 2);
+        assert_eq!(
+            plan.beams,
+            vec![(0, 1), (2, 3), (4, 5), (6, 7), (8, 9), (10, 11)],
+            "a beam per beat — the bar line at slot 8 is a beat boundary too"
+        );
+        assert!(plan.flags.is_empty());
+    }
+
+    #[test]
+    fn rests_at_the_edges_leave_the_inner_notes_beamed() {
+        let plan = beam_plan(&[true, false, false, false, false, true], 2);
+        assert_eq!(plan.beams, vec![(2, 3)]);
+        assert_eq!(plan.flags, vec![1, 4], "each edge rest strands a lone note");
+    }
+
+    #[test]
+    fn a_partial_final_beat_flags_its_lone_note() {
+        let plan = beam_plan(&[false; 5], 2);
+        assert_eq!(plan.beams, vec![(0, 1), (2, 3)]);
+        assert_eq!(plan.flags, vec![4]);
+    }
+
+    #[test]
+    fn all_rests_plan_no_notation() {
+        let plan = beam_plan(&[true; 8], 2);
+        assert!(plan.beams.is_empty());
+        assert!(plan.flags.is_empty());
+    }
+
+    #[test]
+    fn a_single_slot_per_beat_flags_every_note() {
+        let plan = beam_plan(&[false, true, false], 1);
+        assert!(plan.beams.is_empty());
+        assert_eq!(plan.flags, vec![0, 2]);
     }
 }

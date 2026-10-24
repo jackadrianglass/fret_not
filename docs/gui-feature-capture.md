@@ -127,7 +127,14 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
 - Tab rows: one line per string, labeled at the left with the string's absolute
   open note in SPN (so E2 vs E4 are distinct), note columns showing fret
   numbers, and a thick section-divider rule below.
-- The intended data source is the selected chunk fingering from the solver.
+- Above the staff, a rhythm row notates the chunk's slots in standard
+  notation: a one-line staff with the meter at its left, a notehead and stem
+  per sounding slot, eighth notes beamed with their beat-mates, a flag on a
+  note alone in its beat, and an eighth-rest glyph on rest slots. Slots are
+  eighth notes; a bar is eight of them (4/4).
+- The staff always shows whole bars: a trailing partial bar is padded with
+  rest columns, so every bar is the same size and grid-aligned.
+- The data source is the selected chunk fingering from the solver.
 
 ## Settings page
 

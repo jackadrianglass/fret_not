@@ -3,6 +3,7 @@ mod colors;
 mod fretboard_canvas;
 mod model;
 mod screens;
+mod tab_canvas;
 
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
@@ -21,7 +22,7 @@ use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
-        .title("fret_not [hover v13]")
+        .title("fret_not [tab v1]")
         .theme(theme)
         .subscription(subscription)
         .window(iced::window::Settings {

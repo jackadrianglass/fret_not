@@ -35,6 +35,15 @@ plan, in one sitting). Verified against docs.rs and the compiler.
   widgets takes `Pixels` — `10.0.into()` infers either representation.
 - No geometry cache used in the spike (every frame re-draws); `canvas::Cache`
   exists in `Program::State` if drawing ever becomes hot.
+- Inside a horizontal `scrollable` the content's width limit is
+  `f32::INFINITY` and its height limit is the viewport height (iced_widget
+  0.14.2 `scrollable::layout`) — a canvas sized `Fixed` content width +
+  `Fill` height scrolls horizontally once the fixed width exceeds the
+  viewport, and fills the cross axis. That is how the tab staff scrolls.
+- A `canvas(...)` chain converted with `.into()` mid-expression (no return
+  type pinning it) needs an explicit annotation —
+  `let e: Element<'_, MyEvent> = canvas(p).width(w).into();` — inference
+  alone leaves the `Theme`/`Renderer` generics ambiguous (E0282).
 
 ## Animation
 
@@ -98,6 +107,10 @@ plan, in one sitting). Verified against docs.rs and the compiler.
   (mapped into) but never *read* triggers `field is never read` — give the
   event a real consumer or destructure it in the match
   (`Message::Board(Event::Clicked(_))`).
+- A paint-only canvas can carry an uninhabited event enum
+  (`pub enum Event {}`) as its `Program` message: mapping it into a screen
+  `Message` variant and matching that variant with `_` is dead-code-lint
+  clean (verified against rustc), so no placeholder event is needed.
 - Dividers: `iced::widget::rule::horizontal(px)` / `rule::vertical(px)` —
   module functions in 0.14.2, **not** `horizontal_rule`/`vertical_rule`.
   `rule::Style` has four fields (`color`, `radius`, `fill_mode`, `snap`)

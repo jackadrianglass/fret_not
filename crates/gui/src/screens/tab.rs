@@ -1,12 +1,16 @@
-use iced::widget::{button, column, container, row, text};
-use iced::{Alignment, Element, Fill, Font};
+use iced::widget::{button, canvas, column, container, row, scrollable, text};
+use iced::{Alignment, Element, Fill};
 
 use fretboard::fingering::Fingering;
 use fretboard::tuning;
 
 use crate::board::{self, BoardState, Highlight};
 use crate::model;
+use crate::tab_canvas::{self, TabCanvas};
 use crate::{Document, Session, Settings};
+
+// One bar per four slots — slots are equal-duration, so a bar reads as 4/4.
+const COLUMNS_PER_BAR: usize = 4;
 
 pub struct TabScreen {
     chord_index: usize,
@@ -18,6 +22,7 @@ pub struct TabScreen {
 #[derive(Debug, Clone)]
 pub enum Message {
     Board(board::Event),
+    TabCanvas(tab_canvas::Event),
     FingeringPrev,
     FingeringNext,
     ChordPrev,
@@ -63,6 +68,7 @@ impl TabScreen {
                 }
                 false
             }
+            Message::TabCanvas(_) => false,
             Message::FingeringPrev => {
                 let len = self.solved.len();
                 if len > 0 {
@@ -88,6 +94,25 @@ impl TabScreen {
             }
         }
     }
+}
+
+// The fret grid the tab paints: one row per string, one column per slot,
+// None where the string does not sound in that slot — a rest, or a note
+// played on another string.
+fn fret_grid(
+    fingering: &Fingering,
+    slot_notes: &[Option<usize>],
+    string_count: usize,
+) -> Vec<Vec<Option<i32>>> {
+    let mut grid = vec![vec![None; slot_notes.len()]; string_count];
+    for (slot, note) in slot_notes.iter().enumerate() {
+        if let Some(position) = note.and_then(|index| fingering.get(index).copied())
+            && let Some(row) = grid.get_mut(position.string_index)
+        {
+            row[slot] = Some(position.fret);
+        }
+    }
+    grid
 }
 
 pub fn view<'a>(
@@ -119,42 +144,25 @@ pub fn view<'a>(
     .spacing(8)
     .align_y(Alignment::Center);
 
-    let lines: Vec<String> = (0..session.instrument.string_count())
-        .rev()
-        .map(|string_index| {
-            let mut line = format!(
-                "{:>3}|",
-                tuning::open_note(&session.instrument.tuning, string_index)
-            );
-            for i in 0..chunk.len() {
-                let played = screen
-                    .slot_notes
-                    .get(i)
-                    .and_then(|note| *note)
-                    .and_then(|note_index| fingering.get(note_index))
-                    .filter(|p| p.string_index == string_index);
-                line += &match played {
-                    Some(position) => format!("{:>4}", position.fret),
-                    None => "   -".to_string(),
-                };
-            }
-            line
-        })
+    let string_count = session.instrument.string_count();
+    let open_notes = (0..string_count)
+        .map(|string_index| tuning::open_note(&session.instrument.tuning, string_index).to_string())
         .collect();
+    let staff = TabCanvas {
+        string_count,
+        open_notes,
+        columns: chunk.len(),
+        frets: fret_grid(&fingering, &screen.slot_notes, string_count),
+        columns_per_bar: COLUMNS_PER_BAR,
+        font_size: settings.font_size,
+    };
+    let staff_width = staff.content_width();
+    let staff_element: Element<'_, tab_canvas::Event> =
+        canvas(staff).width(staff_width).height(Fill).into();
+    let tab_area = container(scrollable(staff_element.map(Message::TabCanvas)).horizontal())
+        .height(Fill)
+        .padding(20);
 
-    let tab = column(
-        lines
-            .into_iter()
-            .map(|line| {
-                text(line)
-                    .font(Font::MONOSPACE)
-                    .size(settings.scale(16.0))
-                    .into()
-            })
-            .collect::<Vec<Element<'_, Message>>>(),
-    );
-
-    let tab_area = container(tab).height(Fill).padding(20);
     let board_area = container(
         board::view(
             board,
@@ -173,4 +181,47 @@ pub fn view<'a>(
         .height(Fill)
         .width(Fill)
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fretboard::fretboard_position::FretboardPosition;
+
+    fn pos(string_index: usize, fret: i32) -> FretboardPosition {
+        FretboardPosition { string_index, fret }
+    }
+
+    #[test]
+    fn notes_land_on_their_string_row_and_rests_leave_columns_empty() {
+        let fingering = Fingering::new(vec![pos(2, 5), pos(0, 12)]);
+        let slot_notes = vec![Some(0), None, Some(1)];
+        let grid = fret_grid(&fingering, &slot_notes, 6);
+        assert_eq!(grid.len(), 6, "one row per string");
+        assert_eq!(grid[2][0], Some(5), "the first note on its string's row");
+        assert_eq!(
+            grid[0][2],
+            Some(12),
+            "a two-digit fret in its slot's column"
+        );
+        assert!(
+            grid.iter().all(|row| row[1].is_none()),
+            "a rest slot leaves every string empty"
+        );
+        assert_eq!(
+            grid.iter().flatten().filter(|cell| cell.is_some()).count(),
+            2,
+            "only the played cells carry frets"
+        );
+    }
+
+    #[test]
+    fn positions_beyond_the_string_count_paint_nothing() {
+        let fingering = Fingering::new(vec![pos(9, 3)]);
+        let grid = fret_grid(&fingering, &[Some(0)], 6);
+        assert!(
+            grid.iter().flatten().all(|cell| cell.is_none()),
+            "a position off the instrument's strings paints nothing"
+        );
+    }
 }

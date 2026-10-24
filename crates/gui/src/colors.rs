@@ -76,3 +76,27 @@ impl CanvasColors {
         }
     }
 }
+
+// Everything the tab canvas paints, derived from the theme palette so the
+// staff follows theme switches.
+pub struct TabColors {
+    pub background: Color,
+    pub string: Color,
+    pub bar_line: Color,
+    pub fret_number: Color,
+    pub open_note: Color,
+}
+
+impl TabColors {
+    pub fn of(theme: &Theme) -> TabColors {
+        let background = theme.palette().background;
+        let text = theme.palette().text;
+        TabColors {
+            background,
+            string: mix(background, text, 0.55),
+            bar_line: mix(background, text, 0.35),
+            fret_number: text,
+            open_note: mix(background, text, 0.5),
+        }
+    }
+}

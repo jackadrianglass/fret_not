@@ -64,8 +64,9 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   positions store their degree, off-key positions store their spelled
   accidental (a "b3", a "#4") — with the octave counted from the anchor
   note. Rests are authored by the rest toggle, not by clicks. Each write
-  steps the cursor right, appending a rest at the end of the chunk
-  (bounded by the max-slot count). Writing or rewriting the
+  steps the cursor right, stopping at the band's end — growing the chunk
+  is the insert points' and the trailing "+"'s job (bounded by the
+  max-slot count). Writing or rewriting the
   anchor note (the chunk's first note) moves the octave reference, shifting
   the other notes to keep their sounding pitches; removing it re-references
   to the next note. Displayed positions are remembered per chunk (keyed with

@@ -483,11 +483,9 @@ fn write_position(
         slot
     };
     chunk::set(chunk, index, slot);
+    // The cursor steps right but never past the band's end — growing the
+    // chunk is the insert points' and the trailing "+"'s job.
     if index + 1 < chunk.len() {
-        screen.slot = index + 1;
-    } else if chunk.len() < model::MAX_SLOTS {
-        chunk::push(chunk, Slot::Rest);
-        edit.positions.push(None);
         screen.slot = index + 1;
     }
     true
@@ -951,7 +949,7 @@ mod tests {
     fn the_same_degree_an_octave_apart_stores_distinct_octaves() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -963,8 +961,8 @@ mod tests {
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
-            vec![Some(0), Some(1), None],
-            "open low E then its octave: degree 3 at chunk octaves 0 and 1, appended rest behind the cursor"
+            vec![Some(0), Some(1)],
+            "open low E then its octave: degree 3 at chunk octaves 0 and 1, no rest appended behind the cursor"
         );
         assert_eq!(
             screen.positions,
@@ -977,7 +975,7 @@ mod tests {
     fn a_click_below_the_anchor_stores_a_negative_octave() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -989,7 +987,7 @@ mod tests {
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
-            vec![Some(0), Some(-1), None],
+            vec![Some(0), Some(-1)],
             "the anchor note stays at octave 0, the lower note counts below it"
         );
         assert_eq!(
@@ -1008,7 +1006,7 @@ mod tests {
     fn an_off_key_click_writes_the_accidental() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1073,32 +1071,33 @@ mod tests {
     }
 
     #[test]
-    fn writing_past_the_end_appends_up_to_the_slot_cap() {
+    fn writing_at_the_end_stops_instead_of_appending() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(model::MAX_SLOTS);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
-        for _ in 0..(model::MAX_SLOTS + 3) {
-            click(&mut screen, &session, &mut document, &settings, pos(0, 0));
-        }
-
+        click(&mut screen, &session, &mut document, &settings, pos(0, 0));
+        assert_eq!(screen.slot, 1, "the cursor steps right within the band");
+        click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         assert_eq!(
             document.chunks[0].len(),
-            model::MAX_SLOTS,
-            "the chunk stops growing at the cap"
+            2,
+            "writing the last slot grows nothing"
+        );
+        assert_eq!(screen.slot, 1, "the cursor pins at the band's end");
+
+        click(&mut screen, &session, &mut document, &settings, pos(1, 0));
+        assert_eq!(
+            document.chunks[0].len(),
+            2,
+            "rewriting the last slot grows nothing either"
         );
         assert_eq!(
-            screen.slot,
-            model::MAX_SLOTS - 1,
-            "the cursor pins at the last slot"
-        );
-        assert!(
-            document.chunks[0]
-                .iter()
-                .all(|slot| matches!(slot, Slot::Note(_))),
-            "every rest was written over"
+            screen.edits[&0].positions[1],
+            Some(pos(1, 0)),
+            "the rewrite still lands on the last slot"
         );
     }
 
@@ -1108,7 +1107,7 @@ mod tests {
         let settings = settings();
         let mut document = Document {
             chunks: vec![
-                Chunk::new(vec![Slot::Rest]).into(),
+                Chunk::new(vec![Slot::Rest, Slot::Rest]).into(),
                 model::second_chunk().into(),
             ],
             selected_chunk: 0,
@@ -1134,7 +1133,7 @@ mod tests {
     fn authored_clicks_beat_the_solve_where_they_disagree() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1162,7 +1161,7 @@ mod tests {
     fn rewriting_the_anchor_note_moves_the_octave_reference() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1181,7 +1180,7 @@ mod tests {
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
-            vec![Some(0), Some(0), None],
+            vec![Some(0), Some(0)],
             "the rewritten anchor keeps octave 0, the other note shifts to keep its register"
         );
         assert_eq!(screen.edits[&0].base, Some(2));
@@ -1191,7 +1190,7 @@ mod tests {
     fn removing_the_anchor_rebases_to_the_new_first_note() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(3);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1365,7 +1364,7 @@ mod tests {
     fn slot_edits_keep_the_position_map_aligned() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(4);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1391,7 +1390,7 @@ mod tests {
         assert_eq!(
             screen.edits[&0].positions,
             vec![Some(pos(0, 0)), Some(pos(0, 0)), None],
-            "toggle, remove, and click-growth keep the position map slot-aligned"
+            "toggle and remove keep the position map slot-aligned"
         );
     }
 
@@ -1399,7 +1398,7 @@ mod tests {
     fn deleting_a_slot_before_the_cursor_shifts_the_cursor_left() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(4);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1443,7 +1442,7 @@ mod tests {
     fn deleting_past_the_cursor_clamps_it_onto_the_new_end() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(3);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1495,7 +1494,7 @@ mod tests {
     fn inserting_between_cells_adds_a_rest_at_that_position() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(3);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1558,7 +1557,7 @@ mod tests {
     fn inserting_at_the_front_keeps_the_anchor_note() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(3);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1654,7 +1653,7 @@ mod tests {
     fn a_hover_past_the_end_clears_on_refresh() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1720,7 +1719,7 @@ mod tests {
     fn a_pending_hover_past_the_end_clears_on_refresh() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1751,7 +1750,7 @@ mod tests {
     fn a_fingering_wider_than_the_default_cap_is_still_solved() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1775,7 +1774,7 @@ mod tests {
     fn fingering_steps_swap_the_displayed_positions() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1832,7 +1831,7 @@ mod tests {
     fn every_fingering_keeps_the_root_note_where_it_was_placed() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1856,7 +1855,7 @@ mod tests {
     fn rotation_does_not_reshape_the_catalog() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -1877,7 +1876,7 @@ mod tests {
     fn creating_a_variant_copies_the_chunk_and_its_edit_state() {
         let session = session();
         let settings = settings();
-        let mut document = rests_document(1);
+        let mut document = rests_document(2);
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
@@ -2007,7 +2006,7 @@ mod tests {
         let settings = settings();
         let mut document = Document {
             chunks: vec![
-                Chunk::new(vec![Slot::Rest]).into(),
+                Chunk::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
                 model::second_chunk().into(),
             ],
             selected_chunk: 0,

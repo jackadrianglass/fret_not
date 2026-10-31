@@ -39,8 +39,8 @@ Per beat (`beat_beams`), standard metric rules:
 - Inner beams (level ≥ 1) connect only notes whose value has that many
   beams — they **break at value changes** (secondary beam breaks).
 - A finer note alone at the group's edge carries a **stub**: a short
-  fragment (`STUB_LENGTH`) pointing away from the group (left stub for the
-  first note, right stub for the last). Interior lone runs cannot occur in
+  fragment (`STUB_LENGTH`) pointing toward the group (right stub for the
+  first note, left stub for the last). Interior lone runs cannot occur in
   2- and 4-slot beats (a value-1 note surrounded by value-2 notes needs 5
   slots), so stubs are always edge stubs.
 - A beat with **one** note carries flags instead: one per beam level, none

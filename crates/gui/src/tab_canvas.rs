@@ -28,7 +28,7 @@ const STEM_HEIGHT: f32 = 30.0;
 const BEAM_THICKNESS: f32 = 2.5;
 const BEAM_SPACING: f32 = 4.0;
 // An edge stub: the short fragment a lone finer note at its group's edge
-// carries, pointing away from the group.
+// carries, pointing toward the group.
 const STUB_LENGTH: f32 = 6.0;
 const NOTEHEAD_RADIUS: f32 = 4.5;
 // A standard notehead is an oval wider than tall, its long axis tilted
@@ -93,7 +93,7 @@ struct Notation {
     // beam connects; level 0 is the outermost beam.
     beams: Vec<(usize, usize, usize)>,
     // Edge stubs: (column, level, left) — a short fragment a lone finer
-    // note at its group's edge carries, pointing away from the group.
+    // note at its group's edge carries, pointing toward the group.
     stubs: Vec<(usize, usize, bool)>,
     // Lone notes carry one flag per beam level: (column, flag count).
     flags: Vec<(usize, usize)>,
@@ -189,11 +189,12 @@ fn beat_beams(notes: &[BeatEvent], slots_per_beat: usize, plan: &mut Notation) {
     }
 }
 
-// A run of one note is an edge stub pointing away from the group; a longer
+// A run of one note is an edge stub pointing toward the group; a longer
 // run is a beam connecting the stems.
 fn close_run(plan: &mut Notation, notes: &[BeatEvent], start: usize, end: usize, level: usize) {
     if start == end {
-        plan.stubs.push((notes[start].column, level, start == 0));
+        plan.stubs
+            .push((notes[start].column, level, end == notes.len() - 1));
     } else {
         plan.beams
             .push((notes[start].column, notes[end].column, level));
@@ -474,7 +475,7 @@ impl TabCanvas {
                 c.fret_number,
             );
         }
-        // An edge stub is a short fragment pointing away from the group.
+        // An edge stub is a short fragment pointing toward the group.
         let stub_length = self.scaled(STUB_LENGTH);
         for &(column, level, left) in &plan.stubs {
             let top = g.stem_top + level as f32 * beam_spacing - beam_half;
@@ -911,8 +912,8 @@ mod tests {
         assert_eq!(plan.beams, vec![(0, 1, 0), (4, 7, 0)]);
         assert_eq!(
             plan.stubs,
-            vec![(0, 1, true), (7, 1, false)],
-            "the lone sixteenth's inner beam points away from the group"
+            vec![(0, 1, false), (7, 1, true)],
+            "the lone sixteenth's inner beam points toward the group"
         );
     }
 
@@ -922,7 +923,7 @@ mod tests {
         // break around the eighth, each sixteenth carrying an edge stub.
         let plan = notation(&[false, false, true, false], 4);
         assert_eq!(plan.beams, vec![(0, 3, 0)]);
-        assert_eq!(plan.stubs, vec![(0, 1, true), (3, 1, false)]);
+        assert_eq!(plan.stubs, vec![(0, 1, false), (3, 1, true)]);
     }
 
     #[test]

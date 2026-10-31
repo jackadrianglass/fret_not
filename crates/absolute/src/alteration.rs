@@ -1,6 +1,9 @@
 use std::fmt;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Alteration {
     Natural,
     Sharp,

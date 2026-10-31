@@ -3,13 +3,15 @@ mod colors;
 mod fretboard_canvas;
 mod model;
 mod screens;
+mod store;
 mod tab_canvas;
 
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use iced::widget::{Stack, button, column, container, pick_list, row, slider, space, text};
-use iced::{Border, Element, Fill, Subscription};
+use iced::{Border, Element, Fill, Subscription, Task};
+use serde::{Deserialize, Serialize};
 
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::instrument::Instrument;
@@ -48,6 +50,8 @@ enum Message {
     Edit(edit::Message),
     Tab(tab::Message),
     Phrase(phrase::Message),
+    DocumentLoaded(Option<Document>),
+    DocumentSaved(Result<(), String>),
 }
 
 pub struct Session {
@@ -70,9 +74,10 @@ impl Session {
 // names the root word it was derived from, so its family can be grouped
 // and named. Lineage is flat by construction — a variant's parent is
 // always a root, never another variant.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct WordEntry {
     pub word: Word,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub variant_of: Option<usize>,
 }
 
@@ -105,6 +110,7 @@ impl From<Word> for WordEntry {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Document {
     pub words: Vec<WordEntry>,
     pub selected_word: usize,
@@ -137,6 +143,7 @@ impl Document {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Step {
     pub word: usize,
     pub root: i32,
@@ -187,7 +194,7 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    fn new() -> (App, Task<Message>) {
         let session = Session {
             instrument: model::instrument(),
             tonic: model::TONICS[0],
@@ -231,7 +238,15 @@ impl App {
         };
         app.screens
             .refresh(&app.session, &app.document, &app.settings);
-        app
+        (app, Task::perform(store::load(), Message::DocumentLoaded))
+    }
+
+    // Persist the document after a mutation; the write runs off the
+    // update thread as a Task.
+    fn save_document(&self) -> Task<Message> {
+        Task::perform(store::save(self.document.clone()), |result| {
+            Message::DocumentSaved(result.map_err(|e| e.to_string()))
+        })
     }
 
     // The board and the screens' caches are derived from the session and
@@ -271,27 +286,37 @@ fn subscription(app: &App) -> Subscription<Message> {
     }
 }
 
-fn update(state: &mut App, message: Message) {
+fn update(state: &mut App, message: Message) -> Task<Message> {
     match message {
         Message::TonicPicked(tonic) => {
             if tonic != state.session.tonic {
                 state.session.tonic = tonic;
                 state.refresh_session();
             }
+            Task::none()
         }
         Message::QualityPicked(quality) => {
             if quality != state.session.quality {
                 state.session.quality = quality;
                 state.refresh_session();
             }
+            Task::none()
         }
-        Message::TempoChanged(tempo) => state.playback.tempo = tempo,
-        Message::ScreenChanged(kind) => state.active = kind,
+        Message::TempoChanged(tempo) => {
+            state.playback.tempo = tempo;
+            Task::none()
+        }
+        Message::ScreenChanged(kind) => {
+            state.active = kind;
+            Task::none()
+        }
         Message::WordSelected(index) => {
             if index < state.document.words.len() && index != state.document.selected_word {
                 state.document.selected_word = index;
                 state.refresh_document();
+                return state.save_document();
             }
+            Task::none()
         }
         Message::WordAdded => {
             state
@@ -300,9 +325,16 @@ fn update(state: &mut App, message: Message) {
                 .push(Word::new(vec![Slot::Rest]).into());
             state.document.selected_word = state.document.words.len() - 1;
             state.refresh_document();
+            state.save_document()
         }
-        Message::RailToggled => state.rail_open = !state.rail_open,
-        Message::PlayToggled => state.playback.playing = !state.playback.playing,
+        Message::RailToggled => {
+            state.rail_open = !state.rail_open;
+            Task::none()
+        }
+        Message::PlayToggled => {
+            state.playback.playing = !state.playback.playing;
+            Task::none()
+        }
         Message::Settings(message) => {
             if state
                 .screens
@@ -311,6 +343,7 @@ fn update(state: &mut App, message: Message) {
             {
                 state.refresh_session();
             }
+            Task::none()
         }
         Message::Edit(message) => {
             if state.screens.edit.update(
@@ -320,17 +353,36 @@ fn update(state: &mut App, message: Message) {
                 &state.settings,
             ) {
                 state.refresh_document();
+                return state.save_document();
             }
+            Task::none()
         }
         Message::Tab(message) => {
             if state.screens.tab.update(message) {
                 state.refresh_document();
+                return state.save_document();
             }
+            Task::none()
         }
         Message::Phrase(message) => {
             if state.screens.phrase.update(message, &state.document) {
                 state.refresh_document();
+                return state.save_document();
             }
+            Task::none()
+        }
+        Message::DocumentLoaded(document) => {
+            if let Some(document) = document {
+                state.document = document;
+                state.refresh_document();
+            }
+            Task::none()
+        }
+        Message::DocumentSaved(result) => {
+            // Nothing surfaces save failures yet; the payload stays so a
+            // status line can read it later.
+            let _ = result;
+            Task::none()
         }
     }
 }
@@ -545,18 +597,18 @@ mod tests {
 
     #[test]
     fn switching_screens_keeps_the_document_intact() {
-        let mut app = App::new();
+        let (mut app, _boot) = App::new();
         let word_count = app.document.words.len();
-        update(&mut app, Message::ScreenChanged(ScreenKind::Tab));
+        let _ = update(&mut app, Message::ScreenChanged(ScreenKind::Tab));
         assert_eq!(app.active, ScreenKind::Tab);
         assert_eq!(app.document.words.len(), word_count);
     }
 
     #[test]
     fn the_settings_page_keeps_the_document_and_the_rail_state() {
-        let mut app = App::new();
+        let (mut app, _boot) = App::new();
         let word_count = app.document.words.len();
-        update(&mut app, Message::ScreenChanged(ScreenKind::Settings));
+        let _ = update(&mut app, Message::ScreenChanged(ScreenKind::Settings));
         assert_eq!(app.active, ScreenKind::Settings);
         assert_eq!(app.document.words.len(), word_count);
         assert!(app.rail_open, "the rail state survives the settings page");
@@ -564,15 +616,15 @@ mod tests {
 
     #[test]
     fn the_tempo_slider_writes_the_playback_tempo() {
-        let mut app = App::new();
-        update(&mut app, Message::TempoChanged(90));
+        let (mut app, _boot) = App::new();
+        let _ = update(&mut app, Message::TempoChanged(90));
         assert_eq!(app.playback.tempo, 90);
     }
 
     #[test]
     fn a_theme_pick_from_settings_reaches_the_app_theme() {
-        let mut app = App::new();
-        update(
+        let (mut app, _boot) = App::new();
+        let _ = update(
             &mut app,
             Message::Settings(settings::Message::ThemePicked(iced::Theme::Dark)),
         );
@@ -581,8 +633,8 @@ mod tests {
 
     #[test]
     fn a_label_mode_pick_from_settings_reaches_the_settings() {
-        let mut app = App::new();
-        update(
+        let (mut app, _boot) = App::new();
+        let _ = update(
             &mut app,
             Message::Settings(settings::Message::LabelModePicked(LabelMode::Notes)),
         );
@@ -634,14 +686,14 @@ mod tests {
 
     #[test]
     fn a_board_click_rewrites_the_selected_slot() {
-        let mut app = App::new();
+        let (mut app, _boot) = App::new();
         // Select the word explicitly — the default selection is a placeholder.
-        update(&mut app, Message::WordSelected(0));
+        let _ = update(&mut app, Message::WordSelected(0));
         let tonic_position = fretboard::fretboard_position::FretboardPosition {
             string_index: 0,
             fret: 0,
         };
-        update(
+        let _ = update(
             &mut app,
             Message::Edit(edit::Message::Board(board::Event::Clicked(tonic_position))),
         );

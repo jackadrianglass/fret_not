@@ -12,3 +12,6 @@ absolute.workspace = true
 relative.workspace = true
 fretboard.workspace = true
 iced = { version = "0.14", features = ["tokio", "canvas"] }
+serde.workspace = true
+toml = "1"
+dirs = "5"

@@ -1,10 +1,11 @@
 use absolute::alteration::Alteration;
 use absolute::pitch_class::PitchClass;
 use absolute::spelled_pitch::SpelledPitch;
+use serde::{Deserialize, Serialize};
 
 use crate::mode::Mode;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct ScaleDegree {
     pub degree: i32,
     pub alteration: Alteration,

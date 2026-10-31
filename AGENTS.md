@@ -34,7 +34,8 @@ The tools available are
 - rust 1.97 via cargo (devenv `languages.rust`); Primary development language
 - nushell 0.115.1; Shell for scripting
 
-No external crate dependencies — the core is std-only by design.
+The core crates depend only on `serde` (derive) for persistence — see
+`notes/persistence.md`; everything else is std-only by design.
 
 ## Commands
 
@@ -287,4 +288,5 @@ House style:
   Note, FretboardPosition, Reach, ScaleDegree, DegreeReference, Slot).
 - Tuning/Word are newtypes over `Vec` (Deref to the slice) with module-level
   functions; structs (Instrument, Key) carry methods.
-- No persistence anywhere yet — a deliberate deferral, not an oversight.
+- The document persists to TOML in the OS data dir on every mutation — see
+  `notes/persistence.md` and `crates/gui/src/store.rs`.

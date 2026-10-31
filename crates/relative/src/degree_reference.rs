@@ -1,10 +1,11 @@
 use absolute::note::Note;
 use absolute::pitch_class::PitchClass;
+use serde::{Deserialize, Serialize};
 
 use crate::mode::Mode;
 use crate::scale_degree::ScaleDegree;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct DegreeReference {
     pub scale_degree: ScaleDegree,
     pub octave: i32,

@@ -18,9 +18,9 @@ Right now, we have a super basic grid kind of editor. Wanna see how that might c
 - [x] Have a better way to pick the notes that isn't a separate drop down
 - [x] Have a quick way of creating new words
 - [x] Have a way to insert notes between others
+- [x] Rename word to word and sequence to phrase
 - [ ] Have a variant list view
 - [ ] word persistence
-- [ ] Rename word to word and sequence to phrase
 
 Okay so now we're making the variants. It's basically copying the row and altering it.
 - How to manage if the original word changes? Defer for now

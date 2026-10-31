@@ -11,6 +11,7 @@ members = [
 absolute = { path = "crates/absolute" }
 relative = { path = "crates/relative" }
 fretboard = { path = "crates/fretboard" }
+serde = { version = "1", features = ["derive"] }
 
 [workspace.package]
 edition = "2024"

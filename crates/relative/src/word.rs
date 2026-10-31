@@ -1,9 +1,12 @@
 use std::ops::Deref;
 
+use serde::{Deserialize, Serialize};
+
 use crate::degree_reference::DegreeReference;
 use crate::scale_degree::ScaleDegree;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Slot {
     Rest,
     Note(DegreeReference),
@@ -11,7 +14,7 @@ pub enum Slot {
 
 // A word is a movable phrase of slots: rest or degree-relative note, all
 // of equal duration — slot presence IS the rhythm.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Word(Vec<Slot>);
 
 impl Word {

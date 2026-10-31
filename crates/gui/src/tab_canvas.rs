@@ -46,7 +46,7 @@ const FLAG_DROP: f32 = 12.0;
 const FLAG_GAP: f32 = 5.0;
 const REST_HEIGHT: f32 = 14.0;
 const REST_HOOK_EXTRA: f32 = 5.0;
-const REST_BALL: f32 = 1.8;
+const REST_BALL: f32 = 2.8;
 const TIME_SIG_SIZE: f32 = 14.0;
 
 // The tab canvas is paint-only for now; the event type exists so the screen
@@ -517,9 +517,11 @@ impl TabCanvas {
         }
     }
 
-    // The rest glyph: a ball with a curved sweep down to a hook per beam
-    // level — one hook for an eighth rest, two for a sixteenth — with a dot
-    // per extra slot on a dotted rest. A rest filling the beat is the
+    // The rest glyph: a ball at the upper left with a horizontal arc
+    // emerging from its bottom and sweeping out to the upper right, and a
+    // near-vertical leg dropping from there to the bottom — one leg for an
+    // eighth rest, a parallel second for a sixteenth — plus a dot per extra
+    // slot on a dotted rest. A rest filling the beat is the
     // quarter rest, drawn as its squiggle. Drawn rather than a font glyph —
     // the default font is a platform sans-serif with no guaranteed
     // musical-symbol coverage, and a missing glyph paints as tofu.
@@ -538,38 +540,32 @@ impl TabCanvas {
         }
         let hooks = beams(event.value, slots_per_beat);
         let height = self.scaled(REST_HEIGHT + (hooks.saturating_sub(1)) as f32 * REST_HOOK_EXTRA);
-        let ball = Point::new(x - height * 0.1, g.rhythm_y - height * 0.6);
-        frame.fill(
-            &canvas::Path::circle(ball, self.scaled(REST_BALL)),
-            c.fret_number,
-        );
+        let ball_radius = self.scaled(REST_BALL);
+        let ball = Point::new(x - height * 0.18, g.rhythm_y - height * 0.6);
+        frame.fill(&canvas::Path::circle(ball, ball_radius), c.fret_number);
+        // Two arcs: a horizontal one sweeping from the corner at the upper
+        // right back into the bottom of the ball, and a near-vertical leg
+        // dropping straight from the corner to the bottom. Extra hooks
+        // repeat the leg, parallel, for the sixteenth.
+        let corner = Point::new(x + height * 0.45, g.rhythm_y - height * 0.55);
+        let point = Point::new(ball.x + ball_radius * 0.25, ball.y + ball_radius * 0.95);
         let sweep = canvas::Path::new(|builder| {
-            let bottom = Point::new(x + height * 0.15, g.rhythm_y + height * 0.25);
-            builder.move_to(ball);
+            builder.move_to(corner);
             builder.quadratic_curve_to(
-                Point::new(x + height * 0.4, g.rhythm_y + height * 0.05),
-                bottom,
+                Point::new(x + height * 0.2, g.rhythm_y - height * 0.3),
+                point,
             );
-            // Each hook curls up-left off the tail — rising steeply, then
-            // flattening out to the left — and the tail drops to the next
-            // hook below.
-            let mut point = bottom;
             for hook in 0..hooks {
-                builder.quadratic_curve_to(
-                    Point::new(point.x - height * 0.14, point.y - height * 0.3),
-                    Point::new(point.x - height * 0.26, point.y - height * 0.34),
-                );
-                if hook + 1 < hooks {
-                    point = Point::new(point.x, point.y + height * 0.22);
-                    builder.line_to(point);
-                }
+                let start = Point::new(corner.x, corner.y + hook as f32 * height * 0.18);
+                builder.move_to(start);
+                builder.line_to(Point::new(start.x - height * 0.35, start.y + height * 1.15));
             }
         });
         frame.stroke(
             &sweep,
             canvas::Stroke::default()
                 .with_color(c.fret_number)
-                .with_width(1.2),
+                .with_width(1.5),
         );
         // A dotted rest carries a dot per extra slot, off to the right.
         let dot_spacing = self.scaled(DOT_SPACING);
@@ -577,10 +573,10 @@ impl TabCanvas {
             frame.fill(
                 &canvas::Path::circle(
                     Point::new(
-                        x + height * 0.45 + dot as f32 * dot_spacing,
-                        g.rhythm_y - height * 0.2,
+                        x + height * 0.58 + dot as f32 * dot_spacing,
+                        g.rhythm_y - height * 0.25,
                     ),
-                    self.scaled(REST_BALL),
+                    self.scaled(DOT_RADIUS),
                 ),
                 c.fret_number,
             );

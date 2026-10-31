@@ -66,8 +66,11 @@ no guaranteed musical-symbol coverage, and a missing glyph paints as tofu.
   (`notehead_extent` = the rotated ellipse's horizontal reach).
 - **Flag**: a quadratic hook off the stem, concave toward the notehead,
   stacked one per beam level (`FLAG_GAP` apart).
-- **Rest (eighth/sixteenth family)**: a ball crowning a quadratic sweep
-  down-right, hooks curling up-left off the tail (one per beam level).
+- **Rest (eighth/sixteenth family)**: two arcs — a more horizontal one
+  emerging from the bottom of the ball at the top left and sweeping out to
+  the top right, and a more vertical one running straight from the top right
+  down to the bottom; the sixteenth rest repeats the vertical stroke in
+  parallel.
 - **Quarter rest**: the squiggle — down-left from the top, across to the
   right, down to a small up-left hook at the bottom.
 - **Dot**: to the right of the notehead, raised into the space above the

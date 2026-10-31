@@ -8,7 +8,7 @@ use fretboard::fretboard::{degree_at, degree_note, degrees_in_window, spelled_de
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::tuning;
-use relative::chunk::{self, Chunk, Slot};
+use relative::chunk::{self, Slot, Word};
 use relative::degree_reference::DegreeReference;
 use relative::key::{Key, Quality};
 use relative::mode::Mode;
@@ -233,8 +233,8 @@ pub fn board(
     (in_key, accidentals)
 }
 
-pub fn initial_chunk() -> Chunk {
-    Chunk::new(vec![
+pub fn initial_chunk() -> Word {
+    Word::new(vec![
         Slot::Note(DegreeReference::natural(1, 0)),
         Slot::Note(DegreeReference::new(
             ScaleDegree::new(3, Alteration::Flat),
@@ -245,31 +245,56 @@ pub fn initial_chunk() -> Chunk {
     ])
 }
 
-pub fn second_chunk() -> Chunk {
-    Chunk::new(vec![
+pub fn second_chunk() -> Word {
+    Word::new(vec![
         Slot::Note(DegreeReference::natural(1, 0)),
         Slot::Note(DegreeReference::natural(5, 0)),
     ])
 }
 
-// The placeholder phrase: twelve slots of eighth notes — a bar and a half,
-// so the tab shows an internal bar line — and the tab screen's
-// rhythmic-notation demo. Placeholder content; the demo needs the beams, a
-// flag, a rest, and a bar line, not any particular pitches.
-pub fn phrase_chunk() -> Chunk {
-    Chunk::new(vec![
-        Slot::Note(DegreeReference::natural(1, 0)),
-        Slot::Note(DegreeReference::natural(2, 0)),
-        Slot::Note(DegreeReference::natural(3, 0)),
-        Slot::Note(DegreeReference::natural(5, 0)),
+// The placeholder phrase: two bars of sixteenth notes demonstrating the
+// rhythm row's standard notation — one variation per beat: a quarter,
+// two eighths, a sixteenth pair plus an eighth, an eighth plus a sixteenth
+// pair; then a quarter, a sixteenth and a dotted eighth, and two silent
+// beats. Placeholder content; the demo needs the values, beams, flags,
+// dots, and rests, not any particular pitches.
+pub fn phrase_chunk() -> Word {
+    let note = |degree: i32| Slot::Note(DegreeReference::natural(degree, 0));
+    Word::new(vec![
+        // Bar 1: O--- | O-O- | OOO- | O-OO.
+        note(1),
         Slot::Rest,
-        Slot::Note(DegreeReference::natural(6, 0)),
-        Slot::Note(DegreeReference::natural(5, 0)),
-        Slot::Note(DegreeReference::natural(3, 0)),
-        Slot::Note(DegreeReference::natural(4, 0)),
-        Slot::Note(DegreeReference::natural(3, 0)),
-        Slot::Note(DegreeReference::natural(2, 0)),
-        Slot::Note(DegreeReference::natural(1, 0)),
+        Slot::Rest,
+        Slot::Rest,
+        note(3),
+        Slot::Rest,
+        note(5),
+        Slot::Rest,
+        note(6),
+        note(5),
+        note(4),
+        Slot::Rest,
+        note(3),
+        Slot::Rest,
+        note(5),
+        note(6),
+        // Bar 2: O--- | OO-- | rest | rest.
+        note(5),
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        note(6),
+        note(5),
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
+        Slot::Rest,
     ])
 }
 
@@ -278,7 +303,7 @@ pub fn phrase_chunk() -> Chunk {
 // slot-to-note index map (None for rests) that aligns the chunk's slots with
 // the fingering rows.
 // The chunk's notes and the slot-to-note alignment (None for rests).
-fn notes_of(chunk: &Chunk, root_degree: i32) -> (Vec<DegreeReference>, Vec<Option<usize>>) {
+fn notes_of(chunk: &Word, root_degree: i32) -> (Vec<DegreeReference>, Vec<Option<usize>>) {
     let reframed = &chunk::apply_progression(chunk, &[root_degree])[0];
     let mut slot_notes: Vec<Option<usize>> = vec![None; reframed.len()];
     let mut notes = Vec::new();
@@ -295,7 +320,7 @@ pub fn solve(
     instrument: &Instrument,
     key: Key,
     mode: Mode,
-    chunk: &Chunk,
+    chunk: &Word,
     root_degree: i32,
     anchor: FretboardPosition,
     fret_cap: i32,
@@ -311,7 +336,7 @@ pub fn solve_pinned(
     instrument: &Instrument,
     key: Key,
     mode: Mode,
-    chunk: &Chunk,
+    chunk: &Word,
     root_degree: i32,
     first: FretboardPosition,
     fret_cap: i32,

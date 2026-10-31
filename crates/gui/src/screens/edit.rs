@@ -9,7 +9,7 @@ use fretboard::fingering::{self, Fingering};
 use fretboard::fretboard::{degree_at, spelled_degree_at};
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
-use relative::chunk::{self, Chunk, Slot};
+use relative::chunk::{self, Slot, Word};
 use relative::degree_reference::DegreeReference;
 use relative::key::Quality;
 
@@ -72,14 +72,14 @@ pub struct EditScreen {
 
 // The index of the chunk's first note — the anchor note its octaves count
 // from and whose position centers the solve window.
-fn anchor_index(chunk: &Chunk) -> Option<usize> {
+fn anchor_index(chunk: &Word) -> Option<usize> {
     chunk.iter().position(|slot| matches!(slot, Slot::Note(_)))
 }
 
 // The chunk's first note is the octave anchor; after a mutation that can
 // change which note is first, restore the invariant — the anchor sits at
 // octave 0 — without moving any sounding pitch.
-fn reanchor(chunk: &mut Chunk, edit: &mut ChunkEdit) {
+fn reanchor(chunk: &mut Word, edit: &mut ChunkEdit) {
     if let Some(Slot::Note(dr)) = anchor_index(chunk).map(|i| chunk[i])
         && dr.octave != 0
     {
@@ -91,7 +91,7 @@ fn reanchor(chunk: &mut Chunk, edit: &mut ChunkEdit) {
 // The widest consecutive fret move across the chunk's displayed notes —
 // the reach the solver must allow for the displayed fingering to be
 // enumerable among its results.
-fn displayed_fret_span(edit: &ChunkEdit, chunk: &Chunk) -> i32 {
+fn displayed_fret_span(edit: &ChunkEdit, chunk: &Word) -> i32 {
     let frets: Vec<i32> = chunk
         .iter()
         .enumerate()
@@ -789,7 +789,7 @@ fn slot_band<'a>(
     screen: &'a EditScreen,
     session: &'a Session,
     base: Option<i32>,
-    chunk: &'a Chunk,
+    chunk: &'a Word,
     index: usize,
     edited: bool,
     settings: &'a Settings,
@@ -911,7 +911,7 @@ mod tests {
 
     fn rests_document(slots: usize) -> Document {
         Document {
-            chunks: vec![Chunk::new(vec![Slot::Rest; slots]).into()],
+            chunks: vec![Word::new(vec![Slot::Rest; slots]).into()],
             selected_chunk: 0,
             steps: Vec::new(),
         }
@@ -1107,7 +1107,7 @@ mod tests {
         let settings = settings();
         let mut document = Document {
             chunks: vec![
-                Chunk::new(vec![Slot::Rest, Slot::Rest]).into(),
+                Word::new(vec![Slot::Rest, Slot::Rest]).into(),
                 model::second_chunk().into(),
             ],
             selected_chunk: 0,
@@ -1292,7 +1292,7 @@ mod tests {
         let settings = settings();
         let mut document = Document {
             chunks: vec![
-                Chunk::new(vec![Slot::Rest]).into(),
+                Word::new(vec![Slot::Rest]).into(),
                 model::second_chunk().into(),
             ],
             selected_chunk: 0,
@@ -1958,7 +1958,7 @@ mod tests {
         let settings = settings();
         let mut document = Document {
             chunks: vec![
-                Chunk::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
+                Word::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
                 model::second_chunk().into(),
             ],
             selected_chunk: 0,
@@ -2006,7 +2006,7 @@ mod tests {
         let settings = settings();
         let mut document = Document {
             chunks: vec![
-                Chunk::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
+                Word::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
                 model::second_chunk().into(),
             ],
             selected_chunk: 0,

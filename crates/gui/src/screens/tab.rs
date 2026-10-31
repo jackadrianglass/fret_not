@@ -9,8 +9,8 @@ use crate::model;
 use crate::tab_canvas::{self, TabCanvas};
 use crate::{Document, Session, Settings};
 
-// One bar per eight slots — slots are eighth notes, so a bar reads as 4/4.
-const COLUMNS_PER_BAR: usize = 8;
+// One bar per sixteen slots — slots are sixteenth notes, so a bar reads as 4/4.
+const COLUMNS_PER_BAR: usize = 16;
 
 pub struct TabScreen {
     chord_index: usize,
@@ -219,6 +219,12 @@ mod tests {
         );
         assert_eq!(padded_columns(8, 8), 8, "a full bar stays as it is");
         assert_eq!(padded_columns(4, 8), 8, "a half bar pads to one bar");
+        assert_eq!(
+            padded_columns(12, 16),
+            16,
+            "sixteenths: three beats pad to a full bar"
+        );
+        assert_eq!(padded_columns(16, 16), 16, "a full bar of sixteenths stays");
         assert_eq!(padded_columns(0, 8), 0, "no slots, no staff");
     }
 

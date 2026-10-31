@@ -13,7 +13,7 @@ use iced::{Border, Element, Fill, Subscription};
 
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::instrument::Instrument;
-use relative::chunk::{Chunk, Slot};
+use relative::chunk::{Slot, Word};
 use relative::key::Quality;
 
 use crate::board::BoardState;
@@ -22,7 +22,7 @@ use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
-        .title("fret_not [tab v4]")
+        .title("fret_not [tab v7]")
         .theme(theme)
         .subscription(subscription)
         .window(iced::window::Settings {
@@ -72,12 +72,12 @@ impl Session {
 // always a root, never another variant.
 #[derive(Clone, PartialEq, Debug)]
 pub struct ChunkEntry {
-    pub chunk: Chunk,
+    pub chunk: Word,
     pub variant_of: Option<usize>,
 }
 
 impl ChunkEntry {
-    pub fn root(chunk: Chunk) -> ChunkEntry {
+    pub fn root(chunk: Word) -> ChunkEntry {
         ChunkEntry {
             chunk,
             variant_of: None,
@@ -86,21 +86,21 @@ impl ChunkEntry {
 }
 
 impl Deref for ChunkEntry {
-    type Target = Chunk;
+    type Target = Word;
 
-    fn deref(&self) -> &Chunk {
+    fn deref(&self) -> &Word {
         &self.chunk
     }
 }
 
 impl DerefMut for ChunkEntry {
-    fn deref_mut(&mut self) -> &mut Chunk {
+    fn deref_mut(&mut self) -> &mut Word {
         &mut self.chunk
     }
 }
 
-impl From<Chunk> for ChunkEntry {
-    fn from(chunk: Chunk) -> ChunkEntry {
+impl From<Word> for ChunkEntry {
+    fn from(chunk: Word) -> ChunkEntry {
         ChunkEntry::root(chunk)
     }
 }
@@ -297,7 +297,7 @@ fn update(state: &mut App, message: Message) {
             state
                 .document
                 .chunks
-                .push(Chunk::new(vec![Slot::Rest]).into());
+                .push(Word::new(vec![Slot::Rest]).into());
             state.document.selected_chunk = state.document.chunks.len() - 1;
             state.refresh_document();
         }
@@ -604,14 +604,14 @@ mod tests {
     fn a_family_is_its_root_then_its_variants_in_creation_order() {
         let document = Document {
             chunks: vec![
-                ChunkEntry::root(Chunk::new(vec![Slot::Rest])),
-                ChunkEntry::root(Chunk::new(vec![Slot::Rest])),
+                ChunkEntry::root(Word::new(vec![Slot::Rest])),
+                ChunkEntry::root(Word::new(vec![Slot::Rest])),
                 ChunkEntry {
-                    chunk: Chunk::new(vec![Slot::Rest]),
+                    chunk: Word::new(vec![Slot::Rest]),
                     variant_of: Some(0),
                 },
                 ChunkEntry {
-                    chunk: Chunk::new(vec![Slot::Rest]),
+                    chunk: Word::new(vec![Slot::Rest]),
                     variant_of: Some(0),
                 },
             ],

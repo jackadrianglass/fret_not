@@ -44,6 +44,14 @@ plan, in one sitting). Verified against docs.rs and the compiler.
   type pinning it) needs an explicit annotation —
   `let e: Element<'_, MyEvent> = canvas(p).width(w).into();` — inference
   alone leaves the `Theme`/`Renderer` generics ambiguous (E0282).
+- `canvas::path::Builder` (iced_graphics 0.14.0 `geometry::path::builder`)
+  has `move_to`/`line_to`/`quadratic_curve_to`/`bezier_curve_to`/`close`,
+  plus `ellipse(arc::Elliptical { center, radii, rotation, start_angle,
+  end_angle })` for (rotated) ellipse arcs. `Path` itself only offers the
+  `new`/`line`/`rectangle`/`circle` constructors — a rotated ellipse goes
+  through `Path::new(|b| b.ellipse(...))` or explicit bezier arcs (the
+  tab's tilted noteheads use the latter, so the tilt direction is explicit
+  in screen coordinates rather than lyon's rotation convention).
 
 ## Animation
 

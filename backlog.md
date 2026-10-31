@@ -19,6 +19,8 @@ Right now, we have a super basic grid kind of editor. Wanna see how that might c
 - [x] Have a quick way of creating new chunks
 - [x] Have a way to insert notes between others
 - [ ] Have a variant list view
+- [ ] Chunk persistence
+- [ ] Rename chunk to word and sequence to phrase
 
 Okay so now we're making the variants. It's basically copying the row and altering it.
 - How to manage if the original chunk changes? Defer for now

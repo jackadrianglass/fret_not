@@ -12,15 +12,15 @@ pub enum Slot {
 // A chunk is a movable sequence of slots: rest or degree-relative note, all
 // of equal duration — slot presence IS the rhythm.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Chunk(Vec<Slot>);
+pub struct Word(Vec<Slot>);
 
-impl Chunk {
-    pub fn new(slots: Vec<Slot>) -> Chunk {
-        Chunk(slots)
+impl Word {
+    pub fn new(slots: Vec<Slot>) -> Word {
+        Word(slots)
     }
 }
 
-impl Deref for Chunk {
+impl Deref for Word {
     type Target = [Slot];
 
     fn deref(&self) -> &[Slot] {
@@ -28,25 +28,25 @@ impl Deref for Chunk {
     }
 }
 
-pub fn push(chunk: &mut Chunk, slot: Slot) {
+pub fn push(chunk: &mut Word, slot: Slot) {
     chunk.0.push(slot);
 }
 
-pub fn insert(chunk: &mut Chunk, index: usize, slot: Slot) {
+pub fn insert(chunk: &mut Word, index: usize, slot: Slot) {
     chunk.0.insert(index, slot);
 }
 
-pub fn remove(chunk: &mut Chunk, index: usize) -> Slot {
+pub fn remove(chunk: &mut Word, index: usize) -> Slot {
     chunk.0.remove(index)
 }
 
-pub fn set(chunk: &mut Chunk, index: usize, slot: Slot) -> Slot {
+pub fn set(chunk: &mut Word, index: usize, slot: Slot) -> Slot {
     std::mem::replace(&mut chunk.0[index], slot)
 }
 
 // Shift every note's octave by [delta]; rests pass through. Interval content
 // is preserved — only the register the octaves count from moves.
-pub fn shift_octaves(chunk: &mut Chunk, delta: i32) {
+pub fn shift_octaves(chunk: &mut Word, delta: i32) {
     for slot in chunk.0.iter_mut() {
         if let Slot::Note(dr) = slot {
             dr.octave += delta;
@@ -64,8 +64,8 @@ fn reframe_degree_reference(dr: DegreeReference, root_degree: i32) -> DegreeRefe
 
 // Shifts every note's degree by [root_degree - 1], carrying the octave when
 // the degree wraps past 7 — interval content is what's preserved.
-pub fn reframe(chunk: &Chunk, root_degree: i32) -> Chunk {
-    Chunk::new(
+pub fn reframe(chunk: &Word, root_degree: i32) -> Word {
+    Word::new(
         chunk
             .iter()
             .map(|slot| match slot {
@@ -77,7 +77,7 @@ pub fn reframe(chunk: &Chunk, root_degree: i32) -> Chunk {
 }
 
 // One reframed chunk per root degree, e.g. [1, 4, 5].
-pub fn apply_progression(chunk: &Chunk, root_degrees: &[i32]) -> Vec<Chunk> {
+pub fn apply_progression(chunk: &Word, root_degrees: &[i32]) -> Vec<Word> {
     root_degrees
         .iter()
         .map(|root_degree| reframe(chunk, *root_degree))
@@ -86,9 +86,7 @@ pub fn apply_progression(chunk: &Chunk, root_degrees: &[i32]) -> Vec<Chunk> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Chunk, Slot, apply_progression, insert, push, reframe, remove, set, shift_octaves,
-    };
+    use super::{Slot, Word, apply_progression, insert, push, reframe, remove, set, shift_octaves};
     use crate::degree_reference::DegreeReference;
     use crate::scale_degree::ScaleDegree;
     use absolute::alteration::Alteration;
@@ -100,7 +98,7 @@ mod tests {
         ))
     }
 
-    fn as_tuples(chunk: &Chunk) -> Vec<Option<(i32, i32, i32)>> {
+    fn as_tuples(chunk: &Word) -> Vec<Option<(i32, i32, i32)>> {
         chunk
             .iter()
             .map(|slot| match slot {
@@ -116,7 +114,7 @@ mod tests {
 
     #[test]
     fn reframing_over_the_tonic_step_is_a_no_op() {
-        let chunk = Chunk::new(vec![
+        let chunk = Word::new(vec![
             note(1, 0, Alteration::Natural),
             Slot::Rest,
             note(1, 0, Alteration::Natural),
@@ -130,7 +128,7 @@ mod tests {
 
     #[test]
     fn reframing_over_the_fourth_shifts_the_tonic_to_degree_four() {
-        let chunk = Chunk::new(vec![note(1, 0, Alteration::Natural)]);
+        let chunk = Word::new(vec![note(1, 0, Alteration::Natural)]);
         assert_eq!(
             as_tuples(&reframe(&chunk, 4)),
             vec![Some((4, 0, 0))],
@@ -140,7 +138,7 @@ mod tests {
 
     #[test]
     fn reframing_carries_an_octave_when_the_degree_wraps_past_seven() {
-        let chunk = Chunk::new(vec![note(5, 0, Alteration::Natural)]);
+        let chunk = Word::new(vec![note(5, 0, Alteration::Natural)]);
         assert_eq!(
             as_tuples(&reframe(&chunk, 5)),
             vec![Some((2, 1, 0))],
@@ -150,7 +148,7 @@ mod tests {
 
     #[test]
     fn reframing_preserves_alteration_and_existing_octave() {
-        let chunk = Chunk::new(vec![note(2, 1, Alteration::Flat)]);
+        let chunk = Word::new(vec![note(2, 1, Alteration::Flat)]);
         assert_eq!(
             as_tuples(&reframe(&chunk, 4)),
             vec![Some((5, 1, -1))],
@@ -160,7 +158,7 @@ mod tests {
 
     #[test]
     fn rests_pass_through_unchanged() {
-        let chunk = Chunk::new(vec![
+        let chunk = Word::new(vec![
             Slot::Rest,
             note(1, 0, Alteration::Natural),
             Slot::Rest,
@@ -176,7 +174,7 @@ mod tests {
         Slot::Note(DegreeReference::natural(degree, 0))
     }
 
-    fn as_degrees(chunk: &Chunk) -> Vec<Option<i32>> {
+    fn as_degrees(chunk: &Word) -> Vec<Option<i32>> {
         chunk
             .iter()
             .map(|slot| match slot {
@@ -188,7 +186,7 @@ mod tests {
 
     #[test]
     fn applying_a_i_iv_v_progression_reinterprets_a_bare_tonic_chunk() {
-        let chunk = Chunk::new(vec![bare_note(1)]);
+        let chunk = Word::new(vec![bare_note(1)]);
         let progression = [1, 4, 5];
         let reprojected = apply_progression(&chunk, &progression);
         assert_eq!(
@@ -202,7 +200,7 @@ mod tests {
     fn apply_to_chunk_produces_one_chunk_per_step() {
         let progression = [1, 4, 5];
         assert_eq!(
-            apply_progression(&Chunk::new(vec![bare_note(1)]), &progression).len(),
+            apply_progression(&Word::new(vec![bare_note(1)]), &progression).len(),
             3,
             "one reprojected chunk per progression step"
         );
@@ -210,7 +208,7 @@ mod tests {
 
     #[test]
     fn push_and_remove_edit_the_slot_list() {
-        let mut chunk = Chunk::new(vec![bare_note(1)]);
+        let mut chunk = Word::new(vec![bare_note(1)]);
         push(&mut chunk, Slot::Rest);
         assert_eq!(chunk.len(), 2, "push appends a slot");
         let removed = remove(&mut chunk, 0);
@@ -222,7 +220,7 @@ mod tests {
 
     #[test]
     fn insert_places_a_slot_at_the_index() {
-        let mut chunk = Chunk::new(vec![bare_note(1), bare_note(2)]);
+        let mut chunk = Word::new(vec![bare_note(1), bare_note(2)]);
         insert(&mut chunk, 1, Slot::Rest);
         assert_eq!(
             as_degrees(&chunk),
@@ -233,7 +231,7 @@ mod tests {
 
     #[test]
     fn set_replaces_the_slot_in_place() {
-        let mut chunk = Chunk::new(vec![bare_note(1), Slot::Rest]);
+        let mut chunk = Word::new(vec![bare_note(1), Slot::Rest]);
         let replaced = set(&mut chunk, 0, Slot::Rest);
         assert!(
             matches!(replaced, Slot::Note(dr) if dr.scale_degree.degree == 1),
@@ -244,7 +242,7 @@ mod tests {
 
     #[test]
     fn shift_octaves_moves_notes_and_leaves_rests_alone() {
-        let mut chunk = Chunk::new(vec![
+        let mut chunk = Word::new(vec![
             note(1, 0, Alteration::Natural),
             Slot::Rest,
             note(2, 1, Alteration::Flat),

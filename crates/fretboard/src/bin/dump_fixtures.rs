@@ -8,7 +8,7 @@ use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::shape;
 use fretboard::tuning;
-use relative::chunk::{self, Chunk, Slot};
+use relative::chunk::{self, Slot, Word};
 use relative::degree_reference::DegreeReference;
 use relative::key::{Key, Quality};
 use relative::mode::Mode;
@@ -83,7 +83,7 @@ fn altered(degree: i32, alteration: Alteration, octave: i32) -> DegreeReference 
     DegreeReference::new(ScaleDegree::new(degree, alteration), octave)
 }
 
-fn chunk_notes(chunk: &Chunk) -> Vec<DegreeReference> {
+fn chunk_notes(chunk: &Word) -> Vec<DegreeReference> {
     chunk
         .iter()
         .filter_map(|slot| match slot {
@@ -109,7 +109,7 @@ fn print_canonical_shapes(shapes: Vec<Fingering>) {
 }
 
 fn print_solver_section() {
-    let base_chunk: Chunk = Chunk::new(vec![
+    let base_chunk: Word = Word::new(vec![
         Slot::Note(dr(1, 0)),
         Slot::Rest,
         Slot::Note(altered(3, Alteration::Flat, 0)),

@@ -128,10 +128,19 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   open note in SPN (so E2 vs E4 are distinct), note columns showing fret
   numbers, and a thick section-divider rule below.
 - Above the staff, a rhythm row notates the chunk's slots in standard
-  notation: a one-line staff with the meter at its left, a notehead and stem
-  per sounding slot, eighth notes beamed with their beat-mates, a flag on a
-  note alone in its beat, and an eighth-rest glyph on rest slots. Slots are
-  eighth notes; a bar is eight of them (4/4).
+  notation: a one-line staff with the meter at its left. Within each beat a
+  note's value is the number of slots it occupies — it absorbs the rests
+  that follow it up to the next note or the beat's end — so O--- is a
+  quarter, O-O- two eighths, OOO- two sixteenths and an eighth. Notes beam
+  per beat: the outer beam spans the beat's group, inner beams break at
+  value changes, and a finer note alone at the group's edge carries a short
+  stub. A note alone in its beat is flagged (one flag per beam level, none
+  for a quarter), and dotted values carry a dot. Rests merge the same way:
+  a hook per beam level, a dot when dotted, and the quarter-rest squiggle
+  for a silent beat. Slots are sixteenth notes; a bar is sixteen of them
+  (4/4). Glyphs are line-drawn in standard shapes: tilted oval noteheads,
+  curved flag hooks, and the ball-and-hooks rest — drawn, not a font glyph,
+  since the default font has no guaranteed musical-symbol coverage.
 - The staff always shows whole bars: a trailing partial bar is padded with
   rest columns, so every bar is the same size and grid-aligned.
 - The data source is the selected chunk fingering from the solver.

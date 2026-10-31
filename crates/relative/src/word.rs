@@ -9,7 +9,7 @@ pub enum Slot {
     Note(DegreeReference),
 }
 
-// A word is a movable sequence of slots: rest or degree-relative note, all
+// A word is a movable phrase of slots: rest or degree-relative note, all
 // of equal duration — slot presence IS the rhythm.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Word(Vec<Slot>);

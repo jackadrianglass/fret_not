@@ -3,7 +3,7 @@ use std::ops::Deref;
 use crate::fretboard_position::FretboardPosition;
 use crate::reach;
 
-// One concrete way to play a sequence of notes: a position per note, in
+// One concrete way to play a phrase of notes: a position per note, in
 // note order.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Fingering(Vec<FretboardPosition>);

@@ -16,7 +16,7 @@ and you should ask the user instead for direction.
 The primary boundaries are
 - Absolute notes layer (`crates/absolute/src`) define what a sounding note is (SPN: C4, E2, Bb3)
 - Relative music layer (`crates/relative/src`) defines what a scale degree, key, and word are
-    — a word is a movable sequence of degree-relative notes, and resolves degrees
+    — a word is a movable phrase of degree-relative notes, and resolves degrees
       against a key into absolute notes.
 - Fretboard layer (`crates/fretboard/src`) maps those onto concrete string/fret positions
   for a given instrument, including finding every playable fingering of a word.
@@ -169,7 +169,7 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            candidate enumeration reuses
                            Fretboard::positions_of_semitone. Lives here, not
                            beside Word: it maps words onto the instrument.
-  fingering.rs             Fingering — one concrete way to play a sequence of
+  fingering.rs             Fingering — one concrete way to play a phrase of
                            notes, a position per note in note order (newtype
                            over Vec, Deref to the slice). slot_positions()
                            projects a fingering back onto slot-aligned
@@ -184,7 +184,7 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
   main.rs                  the shell: App = Session (instrument/tonic/quality) +
                            Settings (theme/label mode/font size/solver fret cap) +
                            Document (words as WordEntry — a word plus its
-                           variant_of lineage, flat under one root — and sequence
+                           variant_of lineage, flat under one root — and phrase
                            steps, owned here and shared by every screen) + Playback;
                            persistent chrome
                            (top bar with nav, key/tempo config and playback
@@ -218,7 +218,7 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
     tab.rs                  tab lines primary; chord/fingering steppers above, compact
                            board below; clicking a board dot jumps to a fingering
                            that plays it
-    sequence.rs            step-card timeline (root roman + word letter + degree
+    phrase.rs            step-card timeline (root roman + word letter + degree
                            glyphs, horizontally scrollable); the board follows the
                            selected step
     settings.rs            the settings page: rule-divided sections (Appearance:

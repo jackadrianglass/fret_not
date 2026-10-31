@@ -12,14 +12,14 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   layout. Width fills the screen; content is anchored by rows.
 - Vertical stack, top to bottom:
   1. Control bar (fixed height, tinted background, rule along its bottom edge)
-  2. Page content: word editor, tab, sequence, or settings page (whichever
+  2. Page content: word editor, tab, phrase, or settings page (whichever
      the page toggle selects)
   3. Fretboard view, pinned to the window bottom regardless of page (a live
      preview of the label-mode and font-size settings on the settings page)
 
 ## Control bar
 
-- Left side: page toggle — "edit" / "tab" / "sequence" / "settings" — and the
+- Left side: page toggle — "edit" / "tab" / "phrase" / "settings" — and the
   word-library rail collapse toggle (both hidden on the settings page).
 - Right side, flush to the right edge: tonic dropdown (12 spelled tonic names),
   key quality dropdown (Major / Minor), tempo slider (40–240 bpm) with its
@@ -119,7 +119,7 @@ be rebuilt against any Rust GUI toolkit. `crates/gui` (iced) implements this;
   flat — a variant never has variants of its own; deriving from a variant
   still parents to the root.
 - The word-library rail stays a flat list of every word (roots and
-  variants), named by the same lineage; sequence steps reference words by
+  variants), named by the same lineage; phrase steps reference words by
   index, and variants append at the end so existing references never shift.
 
 ## Tab viewing page

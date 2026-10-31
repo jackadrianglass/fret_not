@@ -1,5 +1,5 @@
 pub mod edit;
-pub mod sequence;
+pub mod phrase;
 pub mod settings;
 pub mod tab;
 
@@ -9,7 +9,7 @@ use crate::{Document, Session, Settings};
 pub enum ScreenKind {
     Edit,
     Tab,
-    Sequence,
+    Phrase,
     Settings,
 }
 
@@ -18,7 +18,7 @@ impl ScreenKind {
         match self {
             ScreenKind::Edit => "edit",
             ScreenKind::Tab => "tab",
-            ScreenKind::Sequence => "sequence",
+            ScreenKind::Phrase => "phrase",
             ScreenKind::Settings => "settings",
         }
     }
@@ -27,7 +27,7 @@ impl ScreenKind {
 pub struct Screens {
     pub edit: edit::EditScreen,
     pub tab: tab::TabScreen,
-    pub sequence: sequence::SequenceScreen,
+    pub phrase: phrase::PhraseScreen,
     pub settings: settings::SettingsScreen,
 }
 
@@ -36,7 +36,7 @@ impl Screens {
         Screens {
             edit: edit::EditScreen::new(),
             tab: tab::TabScreen::new(),
-            sequence: sequence::SequenceScreen::new(),
+            phrase: phrase::PhraseScreen::new(),
             settings: settings::SettingsScreen::new(),
         }
     }
@@ -47,7 +47,7 @@ impl Screens {
     pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
         self.edit.refresh(session, document, settings);
         self.tab.refresh(session, document, settings);
-        self.sequence.refresh(session, document, settings);
+        self.phrase.refresh(session, document, settings);
         self.settings.refresh(settings);
     }
 }

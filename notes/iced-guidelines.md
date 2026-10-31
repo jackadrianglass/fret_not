@@ -116,11 +116,11 @@ discipline and hold across versions.
   data returns `Option`, never panics (Elm 0.15). Restates the house rule —
   `panic!` only for invariant violations, documented on the function.
 - Reproduce as a message list: state is a deterministic fold over messages,
-  so any bad interaction is an exact message sequence. Prefer the v0.14
+  so any bad interaction is an exact message phrase. Prefer the v0.14
   toolset [0.14] to capture it — time-travel debugging, test recorder,
   runtime emulator, hot reload — over re-clicking by hand (0.14 release
   notes).
-- Test update like the runtime does: feed a message sequence into a
+- Test update like the runtime does: feed a message phrase into a
   `State`, assert on the result — no window, no GUI init (iced book, The
   Runtime; inline-`#[cfg(test)]` house rule). Skeleton below.
 

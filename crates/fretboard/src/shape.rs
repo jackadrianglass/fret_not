@@ -13,7 +13,7 @@ use crate::tuning;
 // positions, Pentatonic's degrees give the five 2-notes-per-string
 // positions, Arpeggio's the three 1-note-per-string inversions.
 
-// The cyclic degree sequence starting [start] notes into the cycle, with the
+// The cyclic degree phrase starting [start] notes into the cycle, with the
 // octave carrying once per cycle. Empty degrees give no notes.
 pub fn scale_notes(degrees: &[ScaleDegree], start: i32, count: i32) -> Vec<DegreeReference> {
     let cycle = degrees.len() as i32;

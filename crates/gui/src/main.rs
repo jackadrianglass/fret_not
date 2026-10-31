@@ -18,7 +18,7 @@ use relative::word::{Slot, Word};
 
 use crate::board::BoardState;
 use crate::model::{BASE_FONT_SIZE, LabelMode};
-use crate::screens::{ScreenKind, Screens, edit, sequence, settings, tab};
+use crate::screens::{ScreenKind, Screens, edit, phrase, settings, tab};
 
 fn main() -> iced::Result {
     iced::application(App::new, update, view)
@@ -47,7 +47,7 @@ enum Message {
     Settings(settings::Message),
     Edit(edit::Message),
     Tab(tab::Message),
-    Sequence(sequence::Message),
+    Phrase(phrase::Message),
 }
 
 pub struct Session {
@@ -327,8 +327,8 @@ fn update(state: &mut App, message: Message) {
                 state.refresh_document();
             }
         }
-        Message::Sequence(message) => {
-            if state.screens.sequence.update(message, &state.document) {
+        Message::Phrase(message) => {
+            if state.screens.phrase.update(message, &state.document) {
                 state.refresh_document();
             }
         }
@@ -400,14 +400,14 @@ fn view(state: &App) -> Element<'_, Message> {
             &state.settings,
         )
         .map(Message::Tab),
-        ScreenKind::Sequence => sequence::view(
-            &state.screens.sequence,
+        ScreenKind::Phrase => phrase::view(
+            &state.screens.phrase,
             &state.session,
             &state.document,
             &state.board,
             &state.settings,
         )
-        .map(Message::Sequence),
+        .map(Message::Phrase),
         ScreenKind::Settings => settings::view(
             &state.screens.settings,
             &state.session,
@@ -445,7 +445,7 @@ fn top_bar(state: &App) -> Element<'_, Message> {
     for kind in [
         ScreenKind::Edit,
         ScreenKind::Tab,
-        ScreenKind::Sequence,
+        ScreenKind::Phrase,
         ScreenKind::Settings,
     ] {
         let active = state.active == kind;
@@ -487,7 +487,7 @@ fn top_bar(state: &App) -> Element<'_, Message> {
 
     let playback = row![
         button(if state.playback.playing { "■" } else { "▶" }).on_press(Message::PlayToggled),
-        text(state.screens.sequence.step_label(&state.document)),
+        text(state.screens.phrase.step_label(&state.document)),
     ]
     .spacing(8)
     .align_y(iced::Alignment::Center);

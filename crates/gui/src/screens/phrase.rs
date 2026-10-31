@@ -9,7 +9,7 @@ use crate::colors;
 use crate::model;
 use crate::{Document, Session, Settings, outlined};
 
-pub struct SequenceScreen {
+pub struct PhraseScreen {
     step: usize,
     solved: Vec<Fingering>,
     slot_notes: Vec<Option<usize>>,
@@ -21,9 +21,9 @@ pub enum Message {
     StepSelected(usize),
 }
 
-impl SequenceScreen {
-    pub fn new() -> SequenceScreen {
-        SequenceScreen {
+impl PhraseScreen {
+    pub fn new() -> PhraseScreen {
+        PhraseScreen {
             step: 0,
             solved: Vec::new(),
             slot_notes: Vec::new(),
@@ -86,7 +86,7 @@ fn secondary(theme: &iced::Theme) -> iced::widget::text::Style {
 }
 
 pub fn view<'a>(
-    screen: &'a SequenceScreen,
+    screen: &'a PhraseScreen,
     _session: &'a Session,
     document: &'a Document,
     board: &'a BoardState,

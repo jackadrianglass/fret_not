@@ -465,7 +465,7 @@ impl TabCanvas {
         for &(from, to, level) in &plan.beams {
             // The beams stack down from the stem top, one per level — the
             // outermost beam is the stem's top.
-            let top = g.stem_top - level as f32 * beam_spacing - beam_half;
+            let top = g.stem_top + level as f32 * beam_spacing - beam_half;
             frame.fill(
                 &canvas::Path::rectangle(
                     Point::new(g.stem_x(from), top),
@@ -477,7 +477,7 @@ impl TabCanvas {
         // An edge stub is a short fragment pointing away from the group.
         let stub_length = self.scaled(STUB_LENGTH);
         for &(column, level, left) in &plan.stubs {
-            let top = g.stem_top - level as f32 * beam_spacing - beam_half;
+            let top = g.stem_top + level as f32 * beam_spacing - beam_half;
             let stem_x = g.stem_x(column);
             let (from, width) = if left {
                 (stem_x - stub_length, stub_length)

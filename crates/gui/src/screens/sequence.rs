@@ -2,7 +2,7 @@ use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill, Font};
 
 use fretboard::fingering::Fingering;
-use relative::chunk::Slot;
+use relative::word::Slot;
 
 use crate::board::{self, BoardState, Highlight};
 use crate::colors;
@@ -34,12 +34,12 @@ impl SequenceScreen {
         let Some(step) = document.steps.get(self.step) else {
             return;
         };
-        let chunk = &document.chunks[step.chunk];
+        let word = &document.words[step.word];
         let (solved, slot_notes) = model::solve(
             &session.instrument,
             session.key(),
             session.mode(),
-            chunk,
+            word,
             step.root,
             model::SOLVER_ANCHOR,
             settings.solver_fret_cap,
@@ -65,12 +65,12 @@ impl SequenceScreen {
     pub fn step_label(&self, document: &Document) -> String {
         match document.steps.get(self.step) {
             Some(step) => {
-                let names = model::chunk_names(&document.lineage());
+                let names = model::word_names(&document.lineage());
                 format!(
-                    "step {} / {} — chunk {} over {}",
+                    "step {} / {} — word {} over {}",
                     self.step + 1,
                     document.steps.len(),
-                    names[step.chunk],
+                    names[step.word],
                     model::roman(step.root)
                 )
             }
@@ -92,11 +92,11 @@ pub fn view<'a>(
     board: &'a BoardState,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
-    let names = model::chunk_names(&document.lineage());
+    let names = model::word_names(&document.lineage());
     let mut cards = row![].spacing(6).align_y(Alignment::Center);
     for (i, step) in document.steps.iter().enumerate() {
-        let chunk = &document.chunks[step.chunk];
-        let glyphs = chunk
+        let word = &document.words[step.word];
+        let glyphs = word
             .iter()
             .map(|slot| match slot {
                 Slot::Note(dr) => model::slot_label(*dr),
@@ -108,7 +108,7 @@ pub fn view<'a>(
             text(model::roman(step.root))
                 .size(settings.scale(12.0))
                 .style(secondary),
-            text(names[step.chunk].clone()).size(settings.scale(18.0)),
+            text(names[step.word].clone()).size(settings.scale(18.0)),
             text(glyphs)
                 .size(settings.scale(10.0))
                 .font(Font::MONOSPACE)

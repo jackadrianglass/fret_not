@@ -26,17 +26,17 @@ from drumming to the guitar and see how it goes.
 
 # Core Idea
 
-The idea is to manipulate small groupings of notes, which I'm calling chunks, to
-explore the combinations between different chunks. If you can play a chunk in many
-different positions, many different keys, interwoven with many other chunks, then it
+The idea is to manipulate small groupings of notes, which I'm calling words, to
+explore the combinations between different words. If you can play a word in many
+different positions, many different keys, interwoven with many other words, then it
 becomes effortless to improvise with that idea.
 
 The analogy is very similar to natural languages; individual notes are like letters of
-a word, a chunk is similar to a word. Once you learn enough words and become proficient
+a word, a word is similar to a word. Once you learn enough words and become proficient
 with structuring sentences with them, then integrating new words and composing new sentences
 into poems, stories, essays and other forms of expression is a natural effect.
 
-The actual model of a chunk is using the natural scale degree note with the octave relative
+The actual model of a word is using the natural scale degree note with the octave relative
 to the root anchor note, or silence (aka a rest). Then paired with the key, the anchor note
 on the fret board and the rhythmic base, you get actual positions that you can practice.
 
@@ -65,7 +65,7 @@ in chord progressions (like the classic I-IV-V chord progression)
 
 You can imagine how this would map out over the fret board. There's many places to play
 this idea which maps neatly over major, minor, diminished chords or any of the modes. The
-chunk primitive remains the same. Pair that with other chunks and you get this combinatorial
+word primitive remains the same. Pair that with other words and you get this combinatorial
 explosion of phrases not even counting the rhythmic context yet.
 
 # Status

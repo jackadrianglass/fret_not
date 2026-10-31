@@ -22,7 +22,7 @@ impl Deref for Fingering {
     }
 }
 
-// The chunk bridge: the fingering projected back onto slot-aligned
+// The word bridge: the fingering projected back onto slot-aligned
 // positions — one entry per slot, None where the slot is a rest. [slot_notes]
 // maps each slot to its note's index in the fingering (None for rests).
 pub fn slot_positions(

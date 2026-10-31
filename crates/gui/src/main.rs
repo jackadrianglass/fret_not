@@ -13,8 +13,8 @@ use iced::{Border, Element, Fill, Subscription};
 
 use absolute::spelled_pitch::SpelledPitch;
 use fretboard::instrument::Instrument;
-use relative::chunk::{Slot, Word};
 use relative::key::Quality;
+use relative::word::{Slot, Word};
 
 use crate::board::BoardState;
 use crate::model::{BASE_FONT_SIZE, LabelMode};
@@ -40,8 +40,8 @@ enum Message {
     QualityPicked(Quality),
     TempoChanged(u16),
     ScreenChanged(ScreenKind),
-    ChunkSelected(usize),
-    ChunkAdded,
+    WordSelected(usize),
+    WordAdded,
     RailToggled,
     PlayToggled,
     Settings(settings::Message),
@@ -66,79 +66,79 @@ impl Session {
     }
 }
 
-// A chunk in the document: the chunk itself plus its lineage. A variant
-// names the root chunk it was derived from, so its family can be grouped
+// A word in the document: the word itself plus its lineage. A variant
+// names the root word it was derived from, so its family can be grouped
 // and named. Lineage is flat by construction — a variant's parent is
 // always a root, never another variant.
 #[derive(Clone, PartialEq, Debug)]
-pub struct ChunkEntry {
-    pub chunk: Word,
+pub struct WordEntry {
+    pub word: Word,
     pub variant_of: Option<usize>,
 }
 
-impl ChunkEntry {
-    pub fn root(chunk: Word) -> ChunkEntry {
-        ChunkEntry {
-            chunk,
+impl WordEntry {
+    pub fn root(word: Word) -> WordEntry {
+        WordEntry {
+            word,
             variant_of: None,
         }
     }
 }
 
-impl Deref for ChunkEntry {
+impl Deref for WordEntry {
     type Target = Word;
 
     fn deref(&self) -> &Word {
-        &self.chunk
+        &self.word
     }
 }
 
-impl DerefMut for ChunkEntry {
+impl DerefMut for WordEntry {
     fn deref_mut(&mut self) -> &mut Word {
-        &mut self.chunk
+        &mut self.word
     }
 }
 
-impl From<Word> for ChunkEntry {
-    fn from(chunk: Word) -> ChunkEntry {
-        ChunkEntry::root(chunk)
+impl From<Word> for WordEntry {
+    fn from(word: Word) -> WordEntry {
+        WordEntry::root(word)
     }
 }
 
 pub struct Document {
-    pub chunks: Vec<ChunkEntry>,
-    pub selected_chunk: usize,
+    pub words: Vec<WordEntry>,
+    pub selected_word: usize,
     pub steps: Vec<Step>,
 }
 
 impl Document {
     // The lineage slice the naming and family queries read: one optional
-    // root pointer per chunk.
+    // root pointer per word.
     pub fn lineage(&self) -> Vec<Option<usize>> {
-        self.chunks.iter().map(|entry| entry.variant_of).collect()
+        self.words.iter().map(|entry| entry.variant_of).collect()
     }
 
-    // The root of [chunk]'s family — the chunk itself for a root. Lineage
+    // The root of [word]'s family — the word itself for a root. Lineage
     // is flat, so one step reaches it; the loop just keeps that honest.
-    pub fn root_of(&self, mut chunk: usize) -> usize {
-        while let Some(parent) = self.chunks[chunk].variant_of {
-            chunk = parent;
+    pub fn root_of(&self, mut word: usize) -> usize {
+        while let Some(parent) = self.words[word].variant_of {
+            word = parent;
         }
-        chunk
+        word
     }
 
-    // The chunk's family: its root first, then the root's variants in
+    // The word's family: its root first, then the root's variants in
     // creation (index) order.
-    pub fn family(&self, chunk: usize) -> Vec<usize> {
-        let root = self.root_of(chunk);
+    pub fn family(&self, word: usize) -> Vec<usize> {
+        let root = self.root_of(word);
         let mut family = vec![root];
-        family.extend((0..self.chunks.len()).filter(|&i| self.chunks[i].variant_of == Some(root)));
+        family.extend((0..self.words.len()).filter(|&i| self.words[i].variant_of == Some(root)));
         family
     }
 }
 
 pub struct Step {
-    pub chunk: usize,
+    pub word: usize,
     pub root: i32,
 }
 
@@ -195,19 +195,19 @@ impl App {
         };
         let settings = Settings::default();
         let document = Document {
-            chunks: vec![
-                model::initial_chunk().into(),
-                model::second_chunk().into(),
-                model::phrase_chunk().into(),
+            words: vec![
+                model::initial_word().into(),
+                model::second_word().into(),
+                model::phrase_word().into(),
             ],
-            // The placeholder phrase chunk — the tab screen's rhythmic demo.
-            selected_chunk: 2,
+            // The placeholder phrase word — the tab screen's rhythmic demo.
+            selected_word: 2,
             steps: vec![
-                Step { chunk: 0, root: 1 },
-                Step { chunk: 0, root: 4 },
-                Step { chunk: 0, root: 5 },
-                Step { chunk: 1, root: 1 },
-                Step { chunk: 0, root: 1 },
+                Step { word: 0, root: 1 },
+                Step { word: 0, root: 4 },
+                Step { word: 0, root: 5 },
+                Step { word: 1, root: 1 },
+                Step { word: 0, root: 1 },
             ],
         };
         let board = BoardState::new(
@@ -287,18 +287,18 @@ fn update(state: &mut App, message: Message) {
         }
         Message::TempoChanged(tempo) => state.playback.tempo = tempo,
         Message::ScreenChanged(kind) => state.active = kind,
-        Message::ChunkSelected(index) => {
-            if index < state.document.chunks.len() && index != state.document.selected_chunk {
-                state.document.selected_chunk = index;
+        Message::WordSelected(index) => {
+            if index < state.document.words.len() && index != state.document.selected_word {
+                state.document.selected_word = index;
                 state.refresh_document();
             }
         }
-        Message::ChunkAdded => {
+        Message::WordAdded => {
             state
                 .document
-                .chunks
+                .words
                 .push(Word::new(vec![Slot::Rest]).into());
-            state.document.selected_chunk = state.document.chunks.len() - 1;
+            state.document.selected_word = state.document.words.len() - 1;
             state.refresh_document();
         }
         Message::RailToggled => state.rail_open = !state.rail_open,
@@ -419,7 +419,7 @@ fn view(state: &App) -> Element<'_, Message> {
 
     let content = container(screen).width(Fill).height(Fill).padding(12);
 
-    // The chunk rail is editing chrome; the settings page stands alone.
+    // The word rail is editing chrome; the settings page stands alone.
     let mut body = row![].height(Fill);
     if state.rail_open && state.active != ScreenKind::Settings {
         body = body
@@ -517,21 +517,21 @@ fn top_bar(state: &App) -> Element<'_, Message> {
 }
 
 fn library_rail(state: &App) -> Element<'_, Message> {
-    let names = model::chunk_names(&state.document.lineage());
+    let names = model::word_names(&state.document.lineage());
     let mut list = column![].spacing(4);
-    for (i, _chunk) in state.document.chunks.iter().enumerate() {
-        let selected = i == state.document.selected_chunk;
+    for (i, _word) in state.document.words.iter().enumerate() {
+        let selected = i == state.document.selected_word;
         list = list.push(
             button(text(names[i].clone()))
                 .width(Fill)
-                .on_press(Message::ChunkSelected(i))
+                .on_press(Message::WordSelected(i))
                 .style(outlined(selected)),
         );
     }
 
     let rail = column![
         list,
-        button("+ chunk").width(Fill).on_press(Message::ChunkAdded),
+        button("+ word").width(Fill).on_press(Message::WordAdded),
     ]
     .spacing(8)
     .padding(4);
@@ -546,19 +546,19 @@ mod tests {
     #[test]
     fn switching_screens_keeps_the_document_intact() {
         let mut app = App::new();
-        let chunk_count = app.document.chunks.len();
+        let word_count = app.document.words.len();
         update(&mut app, Message::ScreenChanged(ScreenKind::Tab));
         assert_eq!(app.active, ScreenKind::Tab);
-        assert_eq!(app.document.chunks.len(), chunk_count);
+        assert_eq!(app.document.words.len(), word_count);
     }
 
     #[test]
     fn the_settings_page_keeps_the_document_and_the_rail_state() {
         let mut app = App::new();
-        let chunk_count = app.document.chunks.len();
+        let word_count = app.document.words.len();
         update(&mut app, Message::ScreenChanged(ScreenKind::Settings));
         assert_eq!(app.active, ScreenKind::Settings);
-        assert_eq!(app.document.chunks.len(), chunk_count);
+        assert_eq!(app.document.words.len(), word_count);
         assert!(app.rail_open, "the rail state survives the settings page");
     }
 
@@ -603,22 +603,22 @@ mod tests {
     #[test]
     fn a_family_is_its_root_then_its_variants_in_creation_order() {
         let document = Document {
-            chunks: vec![
-                ChunkEntry::root(Word::new(vec![Slot::Rest])),
-                ChunkEntry::root(Word::new(vec![Slot::Rest])),
-                ChunkEntry {
-                    chunk: Word::new(vec![Slot::Rest]),
+            words: vec![
+                WordEntry::root(Word::new(vec![Slot::Rest])),
+                WordEntry::root(Word::new(vec![Slot::Rest])),
+                WordEntry {
+                    word: Word::new(vec![Slot::Rest]),
                     variant_of: Some(0),
                 },
-                ChunkEntry {
-                    chunk: Word::new(vec![Slot::Rest]),
+                WordEntry {
+                    word: Word::new(vec![Slot::Rest]),
                     variant_of: Some(0),
                 },
             ],
-            selected_chunk: 2,
+            selected_word: 2,
             steps: Vec::new(),
         };
-        assert_eq!(document.root_of(3), 0, "a variant's root is the root chunk");
+        assert_eq!(document.root_of(3), 0, "a variant's root is the root word");
         assert_eq!(document.root_of(1), 1, "a root is its own root");
         assert_eq!(
             document.family(3),
@@ -635,8 +635,8 @@ mod tests {
     #[test]
     fn a_board_click_rewrites_the_selected_slot() {
         let mut app = App::new();
-        // Select the chunk explicitly — the default selection is a placeholder.
-        update(&mut app, Message::ChunkSelected(0));
+        // Select the word explicitly — the default selection is a placeholder.
+        update(&mut app, Message::WordSelected(0));
         let tonic_position = fretboard::fretboard_position::FretboardPosition {
             string_index: 0,
             fret: 0,
@@ -645,10 +645,10 @@ mod tests {
             &mut app,
             Message::Edit(edit::Message::Board(board::Event::Clicked(tonic_position))),
         );
-        match app.document.chunks[0][0] {
+        match app.document.words[0][0] {
             Slot::Note(dr) => {
                 assert_eq!(dr.scale_degree.degree, 3, "open E2 is degree 3 of C major");
-                assert_eq!(dr.octave, 0, "stored relative to the chunk's own degree-1");
+                assert_eq!(dr.octave, 0, "stored relative to the word's own degree-1");
             }
             Slot::Rest => panic!("expected the slot to hold a note"),
         }

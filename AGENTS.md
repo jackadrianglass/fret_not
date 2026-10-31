@@ -15,11 +15,11 @@ and you should ask the user instead for direction.
 
 The primary boundaries are
 - Absolute notes layer (`crates/absolute/src`) define what a sounding note is (SPN: C4, E2, Bb3)
-- Relative music layer (`crates/relative/src`) defines what a scale degree, key, and chunk are
-    — a chunk is a movable sequence of degree-relative notes, and resolves degrees
+- Relative music layer (`crates/relative/src`) defines what a scale degree, key, and word are
+    — a word is a movable sequence of degree-relative notes, and resolves degrees
       against a key into absolute notes.
 - Fretboard layer (`crates/fretboard/src`) maps those onto concrete string/fret positions
-  for a given instrument, including finding every playable fingering of a chunk.
+  for a given instrument, including finding every playable fingering of a word.
 - The GUI layer (`crates/gui/src`, iced 0.14) implements the app's feature
   set; `docs/gui-spikes.md` records the checklist it was
   built against and `docs/gui-feature-capture.md` the feature capture.
@@ -104,20 +104,20 @@ crates/relative/src/       what the degree IS — degree-relative music, no fret
                            the minor preset is the same 1 3 5 — scale-relative degrees
                            already spell the minor triad). These lists drive
                            highlighting and shapes.
-  degree_reference.rs     {scale_degree, octave} — THE abstract note, and the chunk
+  degree_reference.rs     {scale_degree, octave} — THE abstract note, and the word
                            layer's domain type. Octave is TONIC-anchored: octave 0
                            spans from the tonic up to the octave above, so degree 1
                            octave 0 IS the tonic. interval() is THE resolution primitive
                            (semitones above the tonic); note() builds an absolute SPN
                            note on top of it — the seam where relative becomes absolute.
-  chunk.rs                 the movable pattern layer, most conceptually central:
+  word.rs                 the movable pattern layer, most conceptually central:
                            Slot::Rest | Slot(DegreeReference) (slot presence IS the
                            rhythm; all slots equal duration — deliberate
-                           simplification); Chunk is a newtype over Vec<Slot>
+                           simplification); Word is a newtype over Vec<Slot>
                            (Deref to the slice; push/remove/set as module functions);
                            reframe() rotates degrees mod 7 with octave carry — this is
-                           what makes chunks transposable; apply_progression() repeats
-                           a chunk per chord root (e.g. [1, 4, 5])
+                           what makes words transposable; apply_progression() repeats
+                           a word per chord root (e.g. [1, 4, 5])
 
 crates/fretboard/src/      where you PLAY it — relative + absolute → strings and frets
   fretboard_position.rs    {string_index: usize, fret: i32} — a concrete position
@@ -153,9 +153,9 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            sounding interval span between two positions
                            (semitone_span is tuning-aware — cross-string stretch
                            depends on the tuning's intervals). Only between() is wired
-                           so far (Chunk_solver's distance); ranking by semitone_span
+                           so far (Word_solver's distance); ranking by semitone_span
                            awaits the pick-and-practice flow.
-  chunk_solver.rs          positions() — every fingering of a chunk, ranked by reach
+  word_solver.rs          positions() — every fingering of a word, ranked by reach
                            distance from a start anchor; positions_from() — the
                            same with the first note pinned to an exact position
                            (the edit screen's rotation catalog);
@@ -168,7 +168,7 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
                            Instrument::range — no magic sweep constants — and
                            candidate enumeration reuses
                            Fretboard::positions_of_semitone. Lives here, not
-                           beside Chunk: it maps chunks onto the instrument.
+                           beside Word: it maps words onto the instrument.
   fingering.rs             Fingering — one concrete way to play a sequence of
                            notes, a position per note in note order (newtype
                            over Vec, Deref to the slice). slot_positions()
@@ -183,12 +183,12 @@ crates/fretboard/src/      where you PLAY it — relative + absolute → strings
 crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout prototype)
   main.rs                  the shell: App = Session (instrument/tonic/quality) +
                            Settings (theme/label mode/font size/solver fret cap) +
-                           Document (chunks as ChunkEntry — a chunk plus its
+                           Document (words as WordEntry — a word plus its
                            variant_of lineage, flat under one root — and sequence
                            steps, owned here and shared by every screen) + Playback;
                            persistent chrome
                            (top bar with nav, key/tempo config and playback
-                           groups, collapsible chunk-library rail — hidden on the
+                           groups, collapsible word-library rail — hidden on the
                            settings page); screen views are routed in via .map
                            and report mutations back as a bool that triggers
                            screens.refresh
@@ -206,19 +206,19 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
                            fingerings are cached in update and go stale on any
                            document/session/settings change, which the shell fixes
                            by calling Screens::refresh
-    edit.rs                the edited chunk's family stacked as slot bands (root
+    edit.rs                the edited word's family stacked as slot bands (root
                            first, then each variant; label at left, the edited band
                            accent-bordered and -labeled): every band is fully
                            editable inline, and the board, stepper and rest toggle
-                           follow the edited chunk; "+ add variant" copies the
-                           edited chunk (slots + authored positions + octave base)
+                           follow the edited word; "+ add variant" copies the
+                           edited word (slots + authored positions + octave base)
                            parented to the root; board clicks write degrees into
-                           the edited chunk's selected slot, off-key clicks clear
+                           the edited word's selected slot, off-key clicks clear
                            it to a rest
     tab.rs                  tab lines primary; chord/fingering steppers above, compact
                            board below; clicking a board dot jumps to a fingering
                            that plays it
-    sequence.rs            step-card timeline (root roman + chunk letter + degree
+    sequence.rs            step-card timeline (root roman + word letter + degree
                            glyphs, horizontally scrollable); the board follows the
                            selected step
     settings.rs            the settings page: rule-divided sections (Appearance:
@@ -229,7 +229,7 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
                            payloads (InstrumentPreset, LabelMode), BASE_FONT_SIZE,
                            board assembly over degrees_in_window +
                            spelled_degree_at (in-key dots and accidental dots),
-                           solve wiring, seed chunks/steps, chunk names from the
+                           solve wiring, seed words/steps, word names from the
                            lineage (roots lettered, variants numbered under their
                            root), romans — music knowledge stays in the core crates
   fretboard_canvas.rs      canvas Program: grid, dots, halos, hit-testing; paints
@@ -244,8 +244,8 @@ crates/gui/src/            where you SEE it — the iced 0.14 GUI (layout protot
 
 ## Data flow
 
-Chunk path: `chunk::apply_progression` (harmonic resolution per chord) →
-`chunk_solver::positions` (every fingering, sorted by distance) → the GUI's
+Word path: `word::apply_progression` (harmonic resolution per chord) →
+`word_solver::positions` (every fingering, sorted by distance) → the GUI's
 pick-and-practice flow (`model::solve`, prev/next over the ranked fingerings).
 
 GUI flow: tonic/quality → key/mode → `model::board` over
@@ -285,6 +285,6 @@ House style:
   with the invariant documented on the function that panics.
 - Small value types are `Copy` (PitchClass, Letter, Alteration, SpelledPitch,
   Note, FretboardPosition, Reach, ScaleDegree, DegreeReference, Slot).
-- Tuning/Chunk are newtypes over `Vec` (Deref to the slice) with module-level
+- Tuning/Word are newtypes over `Vec` (Deref to the slice) with module-level
   functions; structs (Instrument, Key) carry methods.
 - No persistence anywhere yet — a deliberate deferral, not an oversight.

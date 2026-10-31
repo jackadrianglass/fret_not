@@ -4,30 +4,30 @@ use absolute::spelled_pitch::SpelledPitch;
 use iced::widget::{Stack, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Element, Fill};
 
-use fretboard::chunk_solver;
 use fretboard::fingering::{self, Fingering};
 use fretboard::fretboard::{degree_at, spelled_degree_at};
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
-use relative::chunk::{self, Slot, Word};
+use fretboard::word_solver;
 use relative::degree_reference::DegreeReference;
 use relative::key::Quality;
+use relative::word::{self, Slot, Word};
 
 use crate::board::{self, BoardState, Highlight};
 use crate::colors;
 use crate::model;
-use crate::{ChunkEntry, Document, Session, Settings};
+use crate::{Document, Session, Settings, WordEntry};
 
 const BOARD_HEIGHT: f32 = 260.0;
 
-// The per-chunk editing context, keyed by chunk index: the register the
-// chunk's octaves count from and the fingering being displayed — one
+// The per-word editing context, keyed by word index: the register the
+// word's octaves count from and the fingering being displayed — one
 // position per slot, set by the user's clicks and filled from the solve
 // once, sticky afterwards.
 #[derive(Clone)]
-struct ChunkEdit {
-    // The key-anchored register of the chunk's anchor note — its first
-    // note. Established by the first note written into the chunk (or by
+struct WordEdit {
+    // The key-anchored register of the word's anchor note — its first
+    // note. Established by the first note written into the word (or by
     // where the solve voices it, until then) and moved when the anchor note
     // itself is rewritten.
     base: Option<i32>,
@@ -43,56 +43,56 @@ struct ChunkEdit {
 
 pub struct EditScreen {
     slot: usize,
-    edits: HashMap<usize, ChunkEdit>,
+    edits: HashMap<usize, WordEdit>,
     solved: Vec<Fingering>,
     slot_notes: Vec<Option<usize>>,
-    // The displayed fingering: the edited chunk's positions, slot-aligned
+    // The displayed fingering: the edited word's positions, slot-aligned
     // in [edits] and projected here for the view.
     positions: Fingering,
     // Which member of [solved] is currently displayed — the stepper's
     // index, re-derived in refresh from [positions].
     fingering_index: Option<usize>,
     // The insert point under the cursor, if any — a band's hover state,
-    // tracked per point (chunk, insert index) so the hovered compartment
+    // tracked per point (word, insert index) so the hovered compartment
     // can expand.
     hovered_insert: Option<(usize, usize)>,
     // The insert point whose expansion the hover timer will fire. The
     // compartment expands only after the cursor dwells on it, so passing
     // over a point on the way to a cell never re-flows the band.
     hover_pending: Option<(usize, usize)>,
-    // The chunk + session the caches were derived against; a change resets
+    // The word + session the caches were derived against; a change resets
     // the cursor and, on a key or instrument change, the click history —
     // stored positions are instrument-relative, so a new instrument
     // invalidates them exactly like a new key.
     anchored: Option<(usize, Instrument, SpelledPitch, Quality)>,
-    // Set when the cursor was explicitly placed on a freshly edited chunk
+    // Set when the cursor was explicitly placed on a freshly edited word
     // (a band's cell click); refresh must not reset it to the first slot.
     slot_pinned: bool,
 }
 
-// The index of the chunk's first note — the anchor note its octaves count
+// The index of the word's first note — the anchor note its octaves count
 // from and whose position centers the solve window.
-fn anchor_index(chunk: &Word) -> Option<usize> {
-    chunk.iter().position(|slot| matches!(slot, Slot::Note(_)))
+fn anchor_index(word: &Word) -> Option<usize> {
+    word.iter().position(|slot| matches!(slot, Slot::Note(_)))
 }
 
-// The chunk's first note is the octave anchor; after a mutation that can
+// The word's first note is the octave anchor; after a mutation that can
 // change which note is first, restore the invariant — the anchor sits at
 // octave 0 — without moving any sounding pitch.
-fn reanchor(chunk: &mut Word, edit: &mut ChunkEdit) {
-    if let Some(Slot::Note(dr)) = anchor_index(chunk).map(|i| chunk[i])
+fn reanchor(word: &mut Word, edit: &mut WordEdit) {
+    if let Some(Slot::Note(dr)) = anchor_index(word).map(|i| word[i])
         && dr.octave != 0
     {
-        chunk::shift_octaves(chunk, -dr.octave);
+        word::shift_octaves(word, -dr.octave);
         edit.base = edit.base.map(|base| base + dr.octave);
     }
 }
 
-// The widest consecutive fret move across the chunk's displayed notes —
+// The widest consecutive fret move across the word's displayed notes —
 // the reach the solver must allow for the displayed fingering to be
 // enumerable among its results.
-fn displayed_fret_span(edit: &ChunkEdit, chunk: &Word) -> i32 {
-    let frets: Vec<i32> = chunk
+fn displayed_fret_span(edit: &WordEdit, word: &Word) -> i32 {
+    let frets: Vec<i32> = word
         .iter()
         .enumerate()
         .filter_map(|(i, slot)| match slot {
@@ -110,11 +110,11 @@ fn displayed_fret_span(edit: &ChunkEdit, chunk: &Word) -> i32 {
 #[derive(Debug, Clone)]
 pub enum Message {
     Board(board::Event),
-    SlotSelected { chunk: usize, slot: usize },
-    RemoveSlot { chunk: usize, slot: usize },
-    InsertSlot { chunk: usize, slot: usize },
-    InsertHovered { chunk: usize, slot: usize },
-    InsertUnhovered { chunk: usize, slot: usize },
+    SlotSelected { word: usize, slot: usize },
+    RemoveSlot { word: usize, slot: usize },
+    InsertSlot { word: usize, slot: usize },
+    InsertHovered { word: usize, slot: usize },
+    InsertUnhovered { word: usize, slot: usize },
     ToggleRest,
     VariantCreated,
     FingeringPrev,
@@ -144,21 +144,21 @@ impl EditScreen {
         self.hover_pending.is_some()
     }
 
-    // The chunk's octave reference register — the anchor note's.
-    fn base_of(&self, chunk: usize) -> Option<i32> {
-        self.edits.get(&chunk).and_then(|edit| edit.base)
+    // The word's octave reference register — the anchor note's.
+    fn base_of(&self, word: usize) -> Option<i32> {
+        self.edits.get(&word).and_then(|edit| edit.base)
     }
 
     pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
         let anchored = (
-            document.selected_chunk,
+            document.selected_word,
             session.instrument.clone(),
             session.tonic,
             session.quality,
         );
         if self.anchored != Some(anchored.clone()) {
-            // A key or instrument change invalidates every chunk's click
-            // history; a chunk switch keeps the per-chunk edits.
+            // A key or instrument change invalidates every word's click
+            // history; a word switch keeps the per-word edits.
             let stale = match &self.anchored {
                 Some((_, instrument, tonic, quality)) => {
                     *instrument != session.instrument
@@ -176,14 +176,14 @@ impl EditScreen {
             }
             self.slot_pinned = false;
         }
-        let chunk = &document.chunks[document.selected_chunk];
+        let word = &document.words[document.selected_word];
         // A hover left over from before a removal can point past its
-        // chunk's end.
+        // word's end.
         let stale_hover = |point: Option<(usize, usize)>| {
-            point.is_some_and(|(chunk, slot)| {
+            point.is_some_and(|(word, slot)| {
                 document
-                    .chunks
-                    .get(chunk)
+                    .words
+                    .get(word)
                     .map(|entry| entry.len())
                     .unwrap_or(0)
                     < slot
@@ -197,25 +197,25 @@ impl EditScreen {
         }
         let edit = self
             .edits
-            .entry(document.selected_chunk)
-            .or_insert_with(|| ChunkEdit {
+            .entry(document.selected_word)
+            .or_insert_with(|| WordEdit {
                 base: None,
                 cap: settings.solver_fret_cap,
-                positions: vec![None; chunk.len()],
+                positions: vec![None; word.len()],
             });
         // The cap grows only when the user places a wider move than it
         // admits — swapped-in fingerings are always within it, so the
         // rotation catalog stays fixed. The setting is the base: a raised
-        // cap lifts every chunk, a lowered one only reaches chunks that
+        // cap lifts every word, a lowered one only reaches words that
         // have not grown past it.
         edit.cap = edit
             .cap
             .max(settings.solver_fret_cap)
-            .max(displayed_fret_span(edit, chunk));
+            .max(displayed_fret_span(edit, word));
         let mut solved = Vec::new();
-        let mut slot_notes = vec![None; chunk.len()];
-        if let Some(i) = anchor_index(chunk)
-            && let Slot::Note(dr) = chunk[i]
+        let mut slot_notes = vec![None; word.len()];
+        if let Some(i) = anchor_index(word)
+            && let Slot::Note(dr) = word[i]
         {
             // The root note's pin: where the user placed it, or — never
             // placed yet — its default starting position, the nearest
@@ -223,7 +223,7 @@ impl EditScreen {
             // from the first refresh, so the stepper count never collapses
             // after a rotation.
             let first = edit.positions.get(i).copied().flatten().or_else(|| {
-                chunk_solver::starting_position(
+                word_solver::starting_position(
                     session.key(),
                     session.mode(),
                     &session.instrument,
@@ -236,7 +236,7 @@ impl EditScreen {
                     &session.instrument,
                     session.key(),
                     session.mode(),
-                    chunk,
+                    word,
                     1,
                     first,
                     edit.cap,
@@ -250,7 +250,7 @@ impl EditScreen {
         // A note slot without a position takes one from the best current
         // fingering — once. Afterwards it only moves when the user touches
         // the slot.
-        for (i, slot) in chunk.iter().enumerate() {
+        for (i, slot) in word.iter().enumerate() {
             if !matches!(slot, Slot::Note(_)) || edit.positions.get(i).copied().flatten().is_some()
             {
                 continue;
@@ -266,16 +266,16 @@ impl EditScreen {
             }
         }
         // The register octaves count from: the anchor note's displayed
-        // register minus its stored octave. Established once per chunk+key
+        // register minus its stored octave. Established once per word+key
         // so clicks always convert against the same reference.
         if edit.base.is_none()
-            && let Some(i) = anchor_index(chunk)
-            && let (Slot::Note(dr), Some(position)) = (chunk[i], edit.positions[i])
+            && let Some(i) = anchor_index(word)
+            && let (Slot::Note(dr), Some(position)) = (word[i], edit.positions[i])
         {
             edit.base = degree_at(&session.instrument, session.key(), session.mode(), position)
                 .map(|clicked| clicked.octave - dr.octave);
         }
-        let positions: Vec<FretboardPosition> = chunk
+        let positions: Vec<FretboardPosition> = word
             .iter()
             .enumerate()
             .filter_map(|(i, slot)| match slot {
@@ -302,29 +302,29 @@ impl EditScreen {
             Message::Board(board::Event::Clicked(position)) => {
                 write_position(self, session, document, settings, position)
             }
-            Message::SlotSelected { chunk, slot } => {
-                let Some(len) = document.chunks.get(chunk).map(|entry| entry.len()) else {
+            Message::SlotSelected { word, slot } => {
+                let Some(len) = document.words.get(word).map(|entry| entry.len()) else {
                     return false;
                 };
-                // Clicking another band's cell edits that chunk and moves
+                // Clicking another band's cell edits that word and moves
                 // the cursor onto the clicked slot.
-                let switched = chunk != document.selected_chunk;
+                let switched = word != document.selected_word;
                 if switched {
-                    document.selected_chunk = chunk;
+                    document.selected_word = word;
                     self.slot_pinned = true;
                 }
                 self.slot = if len > 0 { slot.min(len - 1) } else { 0 };
                 switched
             }
-            Message::InsertHovered { chunk, slot } => {
-                self.hover_pending = Some((chunk, slot));
+            Message::InsertHovered { word, slot } => {
+                self.hover_pending = Some((word, slot));
                 false
             }
-            Message::InsertUnhovered { chunk, slot } => {
-                if self.hover_pending == Some((chunk, slot)) {
+            Message::InsertUnhovered { word, slot } => {
+                if self.hover_pending == Some((word, slot)) {
                     self.hover_pending = None;
                 }
-                if self.hovered_insert == Some((chunk, slot)) {
+                if self.hovered_insert == Some((word, slot)) {
                     self.hovered_insert = None;
                 }
                 false
@@ -335,35 +335,35 @@ impl EditScreen {
                 }
                 false
             }
-            Message::InsertSlot { chunk, slot } => {
-                let Some(entry) = document.chunks.get_mut(chunk) else {
+            Message::InsertSlot { word, slot } => {
+                let Some(entry) = document.words.get_mut(word) else {
                     return false;
                 };
                 if entry.len() >= model::MAX_SLOTS {
                     return false;
                 }
                 let slot = slot.min(entry.len());
-                chunk::insert(entry, slot, Slot::Rest);
-                if let Some(edit) = self.edits.get_mut(&chunk) {
+                word::insert(entry, slot, Slot::Rest);
+                if let Some(edit) = self.edits.get_mut(&word) {
                     edit.positions.insert(slot, None);
                 }
-                if chunk == document.selected_chunk {
+                if word == document.selected_word {
                     // The cursor lands on the fresh slot: the next board
                     // click writes into it.
                     self.slot = slot;
                 }
                 true
             }
-            Message::RemoveSlot { chunk, slot } => {
-                let Some(entry) = document.chunks.get_mut(chunk) else {
+            Message::RemoveSlot { word, slot } => {
+                let Some(entry) = document.words.get_mut(word) else {
                     return false;
                 };
                 if entry.is_empty() {
                     return false;
                 }
                 let slot = slot.min(entry.len() - 1);
-                chunk::remove(entry, slot);
-                if chunk == document.selected_chunk {
+                word::remove(entry, slot);
+                if word == document.selected_word {
                     // The cursor tracks its slot: a deletion before it shifts
                     // it left; deleting past the end clamps it onto the new
                     // end.
@@ -372,37 +372,37 @@ impl EditScreen {
                     }
                     self.slot = self.slot.min(entry.len().saturating_sub(1));
                 }
-                if let Some(edit) = self.edits.get_mut(&chunk) {
+                if let Some(edit) = self.edits.get_mut(&word) {
                     edit.positions.remove(slot);
                     reanchor(entry, edit);
                 }
                 true
             }
             Message::ToggleRest => {
-                let chunk = &mut document.chunks[document.selected_chunk];
-                if chunk.is_empty() {
+                let word = &mut document.words[document.selected_word];
+                if word.is_empty() {
                     return false;
                 }
-                let index = self.slot.min(chunk.len() - 1);
-                let slot = match chunk[index] {
+                let index = self.slot.min(word.len() - 1);
+                let slot = match word[index] {
                     Slot::Rest => Slot::Note(DegreeReference::natural(1, 0)),
                     Slot::Note(_) => Slot::Rest,
                 };
-                chunk::set(chunk, index, slot);
-                if let Some(edit) = self.edits.get_mut(&document.selected_chunk) {
+                word::set(word, index, slot);
+                if let Some(edit) = self.edits.get_mut(&document.selected_word) {
                     edit.positions[index] = None;
-                    reanchor(chunk, edit);
+                    reanchor(word, edit);
                 }
                 true
             }
             Message::VariantCreated => {
-                let selected = document.selected_chunk;
+                let selected = document.selected_word;
                 let root = document.root_of(selected);
-                let source = document.chunks[selected].clone();
+                let source = document.words[selected].clone();
                 let edit = self.edits.get(&selected).cloned();
-                let index = document.chunks.len();
-                document.chunks.push(ChunkEntry {
-                    chunk: source.chunk,
+                let index = document.words.len();
+                document.words.push(WordEntry {
+                    word: source.word,
                     variant_of: Some(root),
                 });
                 // The variant opens exactly where its source was left: the
@@ -411,7 +411,7 @@ impl EditScreen {
                 if let Some(edit) = edit {
                     self.edits.insert(index, edit);
                 }
-                document.selected_chunk = index;
+                document.selected_word = index;
                 self.slot = 0;
                 true
             }
@@ -423,7 +423,7 @@ impl EditScreen {
 
 // A click writes the selected slot and steps the cursor. Every position
 // resolves through spelled_degree_at — in-key or accidental — and
-// stores relative to the anchor note: the chunk's first note, the register
+// stores relative to the anchor note: the word's first note, the register
 // the octaves count from. Writing the anchor note moves the reference (the
 // other notes shift to keep their sounding pitches); any other note stores
 // its register distance from it. The clicked position becomes the slot's
@@ -436,25 +436,25 @@ fn write_position(
     settings: &Settings,
     position: FretboardPosition,
 ) -> bool {
-    let chunk = &mut document.chunks[document.selected_chunk];
-    if chunk.is_empty() {
+    let word = &mut document.words[document.selected_word];
+    if word.is_empty() {
         return false;
     }
-    let index = screen.slot.min(chunk.len() - 1);
+    let index = screen.slot.min(word.len() - 1);
     let clicked = spelled_degree_at(&session.instrument, session.key(), session.mode(), position);
     screen
         .edits
-        .entry(document.selected_chunk)
-        .or_insert_with(|| ChunkEdit {
+        .entry(document.selected_word)
+        .or_insert_with(|| WordEdit {
             base: None,
             cap: settings.solver_fret_cap,
-            positions: vec![None; chunk.len()],
+            positions: vec![None; word.len()],
         });
-    let edit = screen.edits.get_mut(&document.selected_chunk).unwrap();
+    let edit = screen.edits.get_mut(&document.selected_word).unwrap();
     let slot = {
-        // The write lands on the anchor when it writes the chunk's first
-        // note — at, before, or into a note-less chunk.
-        let writes_anchor = match anchor_index(chunk) {
+        // The write lands on the anchor when it writes the word's first
+        // note — at, before, or into a note-less word.
+        let writes_anchor = match anchor_index(word) {
             Some(anchor) => index <= anchor,
             None => true,
         };
@@ -464,7 +464,7 @@ fn write_position(
                 ..clicked
             }),
             Some(base) => {
-                chunk::shift_octaves(chunk, base - clicked.octave);
+                word::shift_octaves(word, base - clicked.octave);
                 edit.base = Some(clicked.octave);
                 Slot::Note(DegreeReference {
                     octave: 0,
@@ -482,17 +482,17 @@ fn write_position(
         edit.positions[index] = Some(position);
         slot
     };
-    chunk::set(chunk, index, slot);
+    word::set(word, index, slot);
     // The cursor steps right but never past the band's end — growing the
-    // chunk is the insert points' and the trailing "+"'s job.
-    if index + 1 < chunk.len() {
+    // word is the insert points' and the trailing "+"'s job.
+    if index + 1 < word.len() {
         screen.slot = index + 1;
     }
     true
 }
 
 // Steps the displayed fingering to the catalog's neighbor (wrapping) and
-// writes it back as the chunk's sticky positions. The root note stays
+// writes it back as the word's sticky positions. The root note stays
 // pinned — every member voices it at the same position, so the octave
 // reference never moves.
 fn step_fingering(screen: &mut EditScreen, document: &mut Document, delta: i32) -> bool {
@@ -506,7 +506,7 @@ fn step_fingering(screen: &mut EditScreen, document: &mut Document, delta: i32) 
     else {
         return false;
     };
-    let Some(edit) = screen.edits.get_mut(&document.selected_chunk) else {
+    let Some(edit) = screen.edits.get_mut(&document.selected_word) else {
         return false;
     };
     edit.positions = fingering::slot_positions(swapped, &screen.slot_notes);
@@ -520,8 +520,8 @@ pub fn view<'a>(
     board: &'a BoardState,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
-    let family = document.family(document.selected_chunk);
-    let names = model::chunk_names(&document.lineage());
+    let family = document.family(document.selected_word);
+    let names = model::word_names(&document.lineage());
 
     let stepper = row![
         button("prev").on_press(Message::FingeringPrev),
@@ -536,13 +536,13 @@ pub fn view<'a>(
     .spacing(8)
     .align_y(Alignment::Center);
 
-    // The rest toggle and the stepper serve the edited chunk, so they sit
+    // The rest toggle and the stepper serve the edited word, so they sit
     // below the stack rather than beside one band.
     let controls = row![button("rest").on_press(Message::ToggleRest), stepper]
         .spacing(16)
         .align_y(Alignment::Center);
 
-    // The edited chunk's family stacked as slot bands: the root first,
+    // The edited word's family stacked as slot bands: the root first,
     // then each variant underneath, all visible at once.
     let mut stack = column![].spacing(8);
     for &index in &family {
@@ -585,8 +585,8 @@ pub fn view<'a>(
     .into()
 }
 
-// One chunk's band in the stack: its label, then its slot band. The
-// edited chunk's band carries the accent border and label; the board,
+// One word's band in the stack: its label, then its slot band. The
+// edited word's band carries the accent border and label; the board,
 // the stepper and the rest toggle all follow it.
 fn band_row<'a>(
     screen: &'a EditScreen,
@@ -596,18 +596,18 @@ fn band_row<'a>(
     name: String,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
-    let chunk = &document.chunks[index];
-    let edited = index == document.selected_chunk;
+    let word = &document.words[index];
+    let edited = index == document.selected_word;
     let base = screen.base_of(index);
     let label = button(text(name).size(settings.scale(16.0)))
         .on_press(Message::SlotSelected {
-            chunk: index,
+            word: index,
             slot: 0,
         })
         .style(move |theme, _status| label_style(theme, edited));
     row![
         container(label).width(settings.scale(28.0)),
-        slot_band(screen, session, base, chunk, index, edited, settings),
+        slot_band(screen, session, base, word, index, edited, settings),
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -636,14 +636,14 @@ fn label_style(theme: &iced::Theme, edited: bool) -> button::Style {
 
 // The selected slot's position on the board — its sticky display position.
 fn selected_slot_position(screen: &EditScreen, document: &Document) -> Option<FretboardPosition> {
-    let chunk = &document.chunks[document.selected_chunk];
-    let index = screen.slot.min(chunk.len().saturating_sub(1));
-    if !matches!(chunk.get(index), Some(Slot::Note(_))) {
+    let word = &document.words[document.selected_word];
+    let index = screen.slot.min(word.len().saturating_sub(1));
+    if !matches!(word.get(index), Some(Slot::Note(_))) {
         return None;
     }
     screen
         .edits
-        .get(&document.selected_chunk)
+        .get(&document.selected_word)
         .and_then(|edit| edit.positions.get(index).copied().flatten())
 }
 
@@ -762,7 +762,7 @@ fn underline(selected: bool) -> impl Fn(&iced::Theme) -> iced::widget::rule::Sty
 // compartment can expand under the cursor; the wrapped button keeps the
 // click.
 fn insert_point<'a>(
-    chunk: usize,
+    word: usize,
     slot: usize,
     hover: InsertHover,
     settings: &'a Settings,
@@ -777,11 +777,11 @@ fn insert_point<'a>(
             .width(width)
             .height(Fill)
             .padding(0)
-            .on_press(Message::InsertSlot { chunk, slot })
+            .on_press(Message::InsertSlot { word, slot })
             .style(move |theme, _status| insert_style(theme, hover)),
     )
-    .on_enter(Message::InsertHovered { chunk, slot })
-    .on_exit(Message::InsertUnhovered { chunk, slot })
+    .on_enter(Message::InsertHovered { word, slot })
+    .on_exit(Message::InsertUnhovered { word, slot })
     .into()
 }
 
@@ -789,15 +789,15 @@ fn slot_band<'a>(
     screen: &'a EditScreen,
     session: &'a Session,
     base: Option<i32>,
-    chunk: &'a Word,
+    word: &'a Word,
     index: usize,
     edited: bool,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
     let mut band = row![].align_y(Alignment::Center);
 
-    for (i, slot) in chunk.iter().enumerate() {
-        // The cursor underline marks the edited chunk's selected slot only.
+    for (i, slot) in word.iter().enumerate() {
+        // The cursor underline marks the edited word's selected slot only.
         let is_selected = edited && i == screen.slot;
         let cell = match slot {
             Slot::Note(dr) => {
@@ -833,7 +833,7 @@ fn slot_band<'a>(
         let delete = button(text("×").size(settings.scale(10.0)))
             .padding(2)
             .on_press(Message::RemoveSlot {
-                chunk: index,
+                word: index,
                 slot: i,
             })
             .style(ghost);
@@ -845,7 +845,7 @@ fn slot_band<'a>(
                 left: 8.0,
             }))
             .on_press(Message::SlotSelected {
-                chunk: index,
+                word: index,
                 slot: i,
             })
             .style(move |theme, status| cell_style(theme, status, is_selected))
@@ -857,7 +857,7 @@ fn slot_band<'a>(
                 .align_y(iced::alignment::Vertical::Top)
                 .into(),
         ]));
-        if i + 1 < chunk.len() {
+        if i + 1 < word.len() {
             let hover = if screen.hovered_insert == Some((index, i + 1)) {
                 InsertHover::Expanded
             } else if screen.hover_pending == Some((index, i + 1)) {
@@ -875,8 +875,8 @@ fn slot_band<'a>(
             .height(Fill)
             .padding(0)
             .on_press(Message::InsertSlot {
-                chunk: index,
-                slot: chunk.len(),
+                word: index,
+                slot: word.len(),
             })
             .style(trailing_style),
     );
@@ -911,8 +911,8 @@ mod tests {
 
     fn rests_document(slots: usize) -> Document {
         Document {
-            chunks: vec![Word::new(vec![Slot::Rest; slots]).into()],
-            selected_chunk: 0,
+            words: vec![Word::new(vec![Slot::Rest; slots]).into()],
+            selected_word: 0,
             steps: Vec::new(),
         }
     }
@@ -957,12 +957,12 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
             vec![Some(0), Some(1)],
-            "open low E then its octave: degree 3 at chunk octaves 0 and 1, no rest appended behind the cursor"
+            "open low E then its octave: degree 3 at word octaves 0 and 1, no rest appended behind the cursor"
         );
         assert_eq!(
             screen.positions,
@@ -983,7 +983,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
@@ -1014,7 +1014,7 @@ mod tests {
 
         assert_eq!(screen.slot, 1, "the cursor steps right");
         assert_eq!(
-            document.chunks[0][0],
+            document.words[0][0],
             Slot::Note(DegreeReference::new(
                 ScaleDegree::new(7, Alteration::Flat),
                 0
@@ -1030,14 +1030,14 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
-            octave_of(document.chunks[0][1]),
+            octave_of(document.words[0][1]),
             Some(0),
             "an in-key note after the accidental still counts from the same base"
         );
         assert_eq!(
             screen.edits[&0].base,
             Some(2),
-            "the accidental's register anchored the chunk"
+            "the accidental's register anchored the word"
         );
     }
 
@@ -1050,10 +1050,10 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
-        assert!(matches!(document.chunks[0][0], Slot::Note(_)));
+        assert!(matches!(document.words[0][0], Slot::Note(_)));
 
         screen.update(
-            Message::SlotSelected { chunk: 0, slot: 0 },
+            Message::SlotSelected { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
@@ -1061,7 +1061,7 @@ mod tests {
         screen.update(Message::ToggleRest, &session, &mut document, &settings);
         screen.refresh(&session, &document, &settings);
         assert!(
-            matches!(document.chunks[0][0], Slot::Rest),
+            matches!(document.words[0][0], Slot::Rest),
             "the toggle still converts a note into a rest"
         );
         assert_eq!(
@@ -1082,7 +1082,7 @@ mod tests {
         assert_eq!(screen.slot, 1, "the cursor steps right within the band");
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         assert_eq!(
-            document.chunks[0].len(),
+            document.words[0].len(),
             2,
             "writing the last slot grows nothing"
         );
@@ -1090,7 +1090,7 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(1, 0));
         assert_eq!(
-            document.chunks[0].len(),
+            document.words[0].len(),
             2,
             "rewriting the last slot grows nothing either"
         );
@@ -1102,15 +1102,15 @@ mod tests {
     }
 
     #[test]
-    fn switching_chunks_resets_the_cursor_and_rederives_the_base() {
+    fn switching_words_resets_the_cursor_and_rederives_the_base() {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![
+            words: vec![
                 Word::new(vec![Slot::Rest, Slot::Rest]).into(),
-                model::second_chunk().into(),
+                model::second_word().into(),
             ],
-            selected_chunk: 0,
+            selected_word: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
@@ -1119,13 +1119,13 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         assert_eq!(screen.slot, 1);
 
-        document.selected_chunk = 1;
+        document.selected_word = 1;
         screen.refresh(&session, &document, &settings);
 
-        assert_eq!(screen.slot, 0, "the cursor resets on a chunk switch");
+        assert_eq!(screen.slot, 0, "the cursor resets on a word switch");
         assert!(
-            screen.base_of(document.selected_chunk).is_some(),
-            "the new chunk's anchor note establishes the base"
+            screen.base_of(document.selected_word).is_some(),
+            "the new word's anchor note establishes the base"
         );
     }
 
@@ -1168,7 +1168,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         screen.update(
-            Message::SlotSelected { chunk: 0, slot: 0 },
+            Message::SlotSelected { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
@@ -1176,7 +1176,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
@@ -1197,13 +1197,13 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         screen.update(
-            Message::SlotSelected { chunk: 0, slot: 0 },
+            Message::SlotSelected { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
         );
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 0 },
+            Message::RemoveSlot { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
@@ -1211,7 +1211,7 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
@@ -1226,8 +1226,8 @@ mod tests {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![model::second_chunk().into()],
-            selected_chunk: 0,
+            words: vec![model::second_word().into()],
+            selected_word: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
@@ -1249,12 +1249,12 @@ mod tests {
     }
 
     #[test]
-    fn a_never_placed_chunk_pins_to_its_starting_position() {
+    fn a_never_placed_word_pins_to_its_starting_position() {
         let session = session();
         let settings = settings();
         let document = Document {
-            chunks: vec![model::second_chunk().into()],
-            selected_chunk: 0,
+            words: vec![model::second_word().into()],
+            selected_word: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
@@ -1264,7 +1264,7 @@ mod tests {
             .positions
             .first()
             .copied()
-            .expect("the chunk fills on the first refresh");
+            .expect("the word fills on the first refresh");
         assert!(
             screen
                 .solved
@@ -1287,24 +1287,24 @@ mod tests {
     }
 
     #[test]
-    fn chunk_switches_keep_each_chunks_click_history() {
+    fn word_switches_keep_each_words_click_history() {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![
+            words: vec![
                 Word::new(vec![Slot::Rest]).into(),
-                model::second_chunk().into(),
+                model::second_word().into(),
             ],
-            selected_chunk: 0,
+            selected_word: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
 
-        document.selected_chunk = 1;
+        document.selected_word = 1;
         screen.refresh(&session, &document, &settings);
-        document.selected_chunk = 0;
+        document.selected_word = 0;
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
@@ -1371,7 +1371,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         screen.update(
-            Message::SlotSelected { chunk: 0, slot: 1 },
+            Message::SlotSelected { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1379,7 +1379,7 @@ mod tests {
         screen.update(Message::ToggleRest, &session, &mut document, &settings);
         screen.refresh(&session, &document, &settings);
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 1 },
+            Message::RemoveSlot { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1406,13 +1406,13 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         click(&mut screen, &session, &mut document, &settings, pos(1, 0));
         screen.update(
-            Message::SlotSelected { chunk: 0, slot: 2 },
+            Message::SlotSelected { word: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
         );
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 0 },
+            Message::RemoveSlot { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
@@ -1420,7 +1420,7 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
@@ -1449,7 +1449,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 2 },
+            Message::RemoveSlot { word: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
@@ -1460,33 +1460,33 @@ mod tests {
             screen.slot, 1,
             "deleting the trailing rest clamps the cursor onto the new last slot"
         );
-        assert_eq!(document.chunks[0].len(), 2);
+        assert_eq!(document.words[0].len(), 2);
 
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 1 },
+            Message::RemoveSlot { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
         );
         screen.refresh(&session, &document, &settings);
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 0 },
+            Message::RemoveSlot { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
         );
         screen.refresh(&session, &document, &settings);
 
-        assert!(document.chunks[0].is_empty(), "the last slot deletes too");
+        assert!(document.words[0].is_empty(), "the last slot deletes too");
         assert_eq!(screen.edits[&0].positions, vec![]);
         assert!(
             !screen.update(
-                Message::RemoveSlot { chunk: 0, slot: 0 },
+                Message::RemoveSlot { word: 0, slot: 0 },
                 &session,
                 &mut document,
                 &settings
             ),
-            "deleting from an empty chunk is a no-op"
+            "deleting from an empty word is a no-op"
         );
     }
 
@@ -1501,7 +1501,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         screen.update(
-            Message::InsertSlot { chunk: 0, slot: 1 },
+            Message::InsertSlot { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1509,7 +1509,7 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
@@ -1533,21 +1533,18 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
-        let len = document.chunks[0].len();
+        let len = document.words[0].len();
         screen.update(
-            Message::InsertSlot {
-                chunk: 0,
-                slot: len,
-            },
+            Message::InsertSlot { word: 0, slot: len },
             &session,
             &mut document,
             &settings,
         );
         screen.refresh(&session, &document, &settings);
 
-        assert_eq!(document.chunks[0].len(), len + 1, "appended");
+        assert_eq!(document.words[0].len(), len + 1, "appended");
         assert!(
-            matches!(document.chunks[0][len], Slot::Rest),
+            matches!(document.words[0][len], Slot::Rest),
             "the appended slot is a rest"
         );
         assert_eq!(screen.slot, len, "the cursor lands on the appended slot");
@@ -1564,7 +1561,7 @@ mod tests {
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         click(&mut screen, &session, &mut document, &settings, pos(0, 12));
         screen.update(
-            Message::InsertSlot { chunk: 0, slot: 0 },
+            Message::InsertSlot { word: 0, slot: 0 },
             &session,
             &mut document,
             &settings,
@@ -1572,7 +1569,7 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
@@ -1592,14 +1589,14 @@ mod tests {
 
         assert!(
             !screen.update(
-                Message::InsertSlot { chunk: 0, slot: 0 },
+                Message::InsertSlot { word: 0, slot: 0 },
                 &session,
                 &mut document,
                 &settings
             ),
-            "a full chunk rejects insertion"
+            "a full word rejects insertion"
         );
-        assert_eq!(document.chunks[0].len(), model::MAX_SLOTS);
+        assert_eq!(document.words[0].len(), model::MAX_SLOTS);
     }
 
     #[test]
@@ -1612,7 +1609,7 @@ mod tests {
 
         assert!(
             !screen.update(
-                Message::InsertHovered { chunk: 0, slot: 1 },
+                Message::InsertHovered { word: 0, slot: 1 },
                 &session,
                 &mut document,
                 &settings
@@ -1629,7 +1626,7 @@ mod tests {
         assert_eq!(screen.hovered_insert, Some((0, 1)));
 
         screen.update(
-            Message::InsertUnhovered { chunk: 0, slot: 2 },
+            Message::InsertUnhovered { word: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
@@ -1641,7 +1638,7 @@ mod tests {
         );
 
         screen.update(
-            Message::InsertUnhovered { chunk: 0, slot: 1 },
+            Message::InsertUnhovered { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1659,7 +1656,7 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         screen.update(
-            Message::InsertHovered { chunk: 0, slot: 2 },
+            Message::InsertHovered { word: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
@@ -1672,7 +1669,7 @@ mod tests {
         );
 
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 1 },
+            Message::RemoveSlot { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1694,13 +1691,13 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         screen.update(
-            Message::InsertHovered { chunk: 0, slot: 1 },
+            Message::InsertHovered { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
         );
         screen.update(
-            Message::InsertUnhovered { chunk: 0, slot: 1 },
+            Message::InsertUnhovered { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1725,7 +1722,7 @@ mod tests {
 
         click(&mut screen, &session, &mut document, &settings, pos(0, 0));
         screen.update(
-            Message::InsertHovered { chunk: 0, slot: 2 },
+            Message::InsertHovered { word: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
@@ -1733,7 +1730,7 @@ mod tests {
         assert!(screen.hover_pending());
 
         screen.update(
-            Message::RemoveSlot { chunk: 0, slot: 1 },
+            Message::RemoveSlot { word: 0, slot: 1 },
             &session,
             &mut document,
             &settings,
@@ -1873,7 +1870,7 @@ mod tests {
     }
 
     #[test]
-    fn creating_a_variant_copies_the_chunk_and_its_edit_state() {
+    fn creating_a_variant_copies_the_word_and_its_edit_state() {
         let session = session();
         let settings = settings();
         let mut document = rests_document(2);
@@ -1889,15 +1886,15 @@ mod tests {
         );
         screen.refresh(&session, &document, &settings);
 
-        assert_eq!(document.chunks.len(), 2);
+        assert_eq!(document.words.len(), 2);
         assert_eq!(
-            document.chunks[1].variant_of,
+            document.words[1].variant_of,
             Some(0),
             "the variant is parented to the root"
         );
         assert_eq!(
-            document.chunks[1].chunk, document.chunks[0].chunk,
-            "the variant copies the chunk's slots"
+            document.words[1].word, document.words[0].word,
+            "the variant copies the word's slots"
         );
         assert_eq!(
             screen.edits[&1].positions, screen.edits[&0].positions,
@@ -1908,8 +1905,8 @@ mod tests {
             "the octave base carries over"
         );
         assert_eq!(
-            document.selected_chunk, 1,
-            "the variant becomes the edited chunk"
+            document.selected_word, 1,
+            "the variant becomes the edited word"
         );
         assert_eq!(screen.slot, 0, "the cursor resets onto the variant");
         assert_eq!(
@@ -1933,10 +1930,10 @@ mod tests {
         screen.update(Message::VariantCreated, &session, &mut document, &settings);
         screen.refresh(&session, &document, &settings);
 
-        assert_eq!(document.chunks.len(), 3);
-        assert_eq!(document.chunks[1].variant_of, Some(0));
+        assert_eq!(document.words.len(), 3);
+        assert_eq!(document.words[1].variant_of, Some(0));
         assert_eq!(
-            document.chunks[2].variant_of,
+            document.words[2].variant_of,
             Some(0),
             "a variant of a variant is still parented to the root — lineage is flat"
         );
@@ -1946,37 +1943,37 @@ mod tests {
             "every variant stacks under the one root"
         );
         assert_eq!(
-            model::chunk_names(&document.lineage()),
+            model::word_names(&document.lineage()),
             vec!["A", "A1", "A2"],
             "variants are numbered under their root"
         );
     }
 
     #[test]
-    fn clicking_another_bands_cell_edits_that_chunk_at_that_slot() {
+    fn clicking_another_bands_cell_edits_that_word_at_that_slot() {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![
+            words: vec![
                 Word::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
-                model::second_chunk().into(),
+                model::second_word().into(),
             ],
-            selected_chunk: 0,
+            selected_word: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
         screen.refresh(&session, &document, &settings);
 
         let switched = screen.update(
-            Message::SlotSelected { chunk: 1, slot: 1 },
+            Message::SlotSelected { word: 1, slot: 1 },
             &session,
             &mut document,
             &settings,
         );
         screen.refresh(&session, &document, &settings);
 
-        assert!(switched, "switching the edited chunk is a document change");
-        assert_eq!(document.selected_chunk, 1);
+        assert!(switched, "switching the edited word is a document change");
+        assert_eq!(document.selected_word, 1);
         assert_eq!(screen.slot, 1, "the cursor lands on the clicked cell");
     }
 
@@ -1989,27 +1986,27 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         let switched = screen.update(
-            Message::SlotSelected { chunk: 0, slot: 2 },
+            Message::SlotSelected { word: 0, slot: 2 },
             &session,
             &mut document,
             &settings,
         );
 
         assert!(!switched, "no document change, no refresh needed");
-        assert_eq!(document.selected_chunk, 0);
+        assert_eq!(document.selected_word, 0);
         assert_eq!(screen.slot, 2);
     }
 
     #[test]
-    fn edits_to_another_band_leave_the_edited_chunk_and_cursor_alone() {
+    fn edits_to_another_band_leave_the_edited_word_and_cursor_alone() {
         let session = session();
         let settings = settings();
         let mut document = Document {
-            chunks: vec![
+            words: vec![
                 Word::new(vec![Slot::Rest, Slot::Rest, Slot::Rest]).into(),
-                model::second_chunk().into(),
+                model::second_word().into(),
             ],
-            selected_chunk: 0,
+            selected_word: 0,
             steps: Vec::new(),
         };
         let mut screen = EditScreen::new();
@@ -2019,7 +2016,7 @@ mod tests {
         assert_eq!(screen.slot, 2, "the cursor sits on the trailing rest");
 
         screen.update(
-            Message::RemoveSlot { chunk: 1, slot: 0 },
+            Message::RemoveSlot { word: 1, slot: 0 },
             &session,
             &mut document,
             &settings,
@@ -2027,19 +2024,19 @@ mod tests {
         screen.refresh(&session, &document, &settings);
 
         assert_eq!(
-            document.chunks[1].len(),
+            document.words[1].len(),
             1,
             "the other band's slot is removed"
         );
-        assert_eq!(document.selected_chunk, 0, "the edited chunk is unchanged");
+        assert_eq!(document.selected_word, 0, "the edited word is unchanged");
         assert_eq!(screen.slot, 2, "the cursor is unchanged");
         assert_eq!(
-            document.chunks[0]
+            document.words[0]
                 .iter()
                 .map(|slot| octave_of(*slot))
                 .collect::<Vec<_>>(),
             vec![Some(0), Some(1), None],
-            "the edited chunk's slots are unchanged"
+            "the edited word's slots are unchanged"
         );
     }
 }

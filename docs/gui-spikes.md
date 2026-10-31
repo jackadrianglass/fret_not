@@ -49,14 +49,14 @@ The core visual, from the feature capture in
 - Click a dot: selects that degree everywhere it appears (the cheap
   stand-in for the future pick-and-practice flow).
 
-### Stage 4 — chunk and solver view
+### Stage 4 — word and solver view
 
 The data-heavy screen, aimed at the known not-yet-features:
 
 - Slot strip: one cell per slot, degree label or `.` for rests, rests
   dimmed, selected cell with a cursor outline, click to select. `+`/`-`
   buttons append/remove slots.
-- Pick-and-practice stub: `chunk_solver::positions` on a hard-coded chunk
+- Pick-and-practice stub: `word_solver::positions` on a hard-coded word
   (`[1, b3, 5, 6]` over a I–IV–V progression), prev/next buttons cycle
   the ranked fingerings, the current fingering renders as dots on the
   fretboard and as fret numbers in a simple tab (one line per string,
@@ -71,7 +71,7 @@ motion):
 - **Key-change bloom.** On tonic change, dots scale+fade in, staggered
   along the neck (leftmost first) — enter/exit transitions on many
   elements at once, with interruption mid-animation.
-- **Chunk playhead.** A playhead sweeps the slot strip at a fixed tempo;
+- **Word playhead.** A playhead sweeps the slot strip at a fixed tempo;
   each slot's notes pulse on the fretboard as it's crossed, rests
   skipped — time-driven animation from app logic, running alongside
   interaction.

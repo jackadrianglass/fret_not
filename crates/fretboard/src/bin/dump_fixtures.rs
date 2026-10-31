@@ -1,19 +1,19 @@
 use absolute::alteration::Alteration;
 use absolute::letter::Letter;
 use absolute::spelled_pitch::SpelledPitch;
-use fretboard::chunk_solver;
 use fretboard::fingering::{self, Fingering};
 use fretboard::fretboard as fb;
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::shape;
 use fretboard::tuning;
-use relative::chunk::{self, Slot, Word};
+use fretboard::word_solver;
 use relative::degree_reference::DegreeReference;
 use relative::key::{Key, Quality};
 use relative::mode::Mode;
 use relative::scale_degree::ScaleDegree;
 use relative::scales;
+use relative::word::{self, Slot, Word};
 
 const ANCHOR: FretboardPosition = FretboardPosition {
     string_index: 0,
@@ -83,9 +83,8 @@ fn altered(degree: i32, alteration: Alteration, octave: i32) -> DegreeReference 
     DegreeReference::new(ScaleDegree::new(degree, alteration), octave)
 }
 
-fn chunk_notes(chunk: &Word) -> Vec<DegreeReference> {
-    chunk
-        .iter()
+fn word_notes(word: &Word) -> Vec<DegreeReference> {
+    word.iter()
         .filter_map(|slot| match slot {
             Slot::Rest => None,
             Slot::Note(dr) => Some(*dr),
@@ -109,17 +108,17 @@ fn print_canonical_shapes(shapes: Vec<Fingering>) {
 }
 
 fn print_solver_section() {
-    let base_chunk: Word = Word::new(vec![
+    let base_word: Word = Word::new(vec![
         Slot::Note(dr(1, 0)),
         Slot::Rest,
         Slot::Note(altered(3, Alteration::Flat, 0)),
         Slot::Note(dr(5, 0)),
     ]);
-    let progression_chunks: Vec<(String, Vec<DegreeReference>)> =
-        chunk::apply_progression(&base_chunk, &[1, 4, 5, 6])
+    let progression_words: Vec<(String, Vec<DegreeReference>)> =
+        word::apply_progression(&base_word, &[1, 4, 5, 6])
             .iter()
             .enumerate()
-            .map(|(i, c)| (format!("prog-{}", i + 1), chunk_notes(c)))
+            .map(|(i, c)| (format!("prog-{}", i + 1), word_notes(c)))
             .collect();
     let mut note_sets: Vec<(String, Vec<DegreeReference>)> = vec![
         ("triad".to_string(), vec![dr(1, 0), dr(3, 0), dr(5, 0)]),
@@ -133,13 +132,13 @@ fn print_solver_section() {
             ],
         ),
     ];
-    note_sets.extend(progression_chunks);
+    note_sets.extend(progression_words);
     for (key_name, key) in keys() {
         let mode = Mode::from(key.quality);
         for (instrument_name, instrument) in instruments() {
             for (set_name, notes) in &note_sets {
                 println!("solver {key_name} {instrument_name} {set_name} cap=4");
-                print_canonical_shapes(chunk_solver::positions(
+                print_canonical_shapes(word_solver::positions(
                     key,
                     mode,
                     &instrument,

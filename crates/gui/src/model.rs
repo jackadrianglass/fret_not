@@ -2,17 +2,17 @@ use absolute::alteration::Alteration;
 use absolute::letter::Letter;
 use absolute::note::Note;
 use absolute::spelled_pitch::SpelledPitch;
-use fretboard::chunk_solver;
 use fretboard::fingering::Fingering;
 use fretboard::fretboard::{degree_at, degree_note, degrees_in_window, spelled_degree_at};
 use fretboard::fretboard_position::FretboardPosition;
 use fretboard::instrument::Instrument;
 use fretboard::tuning;
-use relative::chunk::{self, Slot, Word};
+use fretboard::word_solver;
 use relative::degree_reference::DegreeReference;
 use relative::key::{Key, Quality};
 use relative::mode::Mode;
 use relative::scale_degree::ScaleDegree;
+use relative::word::{self, Slot, Word};
 
 pub const PROGRESSION: [i32; 3] = [1, 4, 5];
 pub const PROGRESSION_LABELS: [&str; 3] = ["I", "IV", "V"];
@@ -133,9 +133,9 @@ pub fn degree_label(dr: DegreeReference) -> String {
     dr.scale_degree.label().to_string()
 }
 
-// The slot's degree label against the chunk's anchor note: a trailing
-// apostrophe per octave above it, a trailing comma per octave below — chunk
-// octaves count from the first note of the chunk.
+// The slot's degree label against the word's anchor note: a trailing
+// apostrophe per octave above it, a trailing comma per octave below — word
+// octaves count from the first note of the word.
 pub fn slot_label(dr: DegreeReference) -> String {
     let mut label = dr.scale_degree.label();
     for _ in 0..dr.octave {
@@ -147,8 +147,8 @@ pub fn slot_label(dr: DegreeReference) -> String {
     label
 }
 
-// The slot's absolute note against the chunk's base register — [base] is
-// the key-anchored octave of the chunk's own degree-1, the register the
+// The slot's absolute note against the word's base register — [base] is
+// the key-anchored octave of the word's own degree-1, the register the
 // editor's clicks resolve against.
 pub fn degree_note_in_register(key: Key, mode: Mode, base: i32, dr: DegreeReference) -> Note {
     dr.note(Note::new(key.tonic, base), mode)
@@ -160,10 +160,10 @@ pub fn roman(root: i32) -> &'static str {
     ROMANS[(root - 1).rem_euclid(7) as usize]
 }
 
-// Chunk labels from the lineage: roots are lettered in order, each variant
+// Word labels from the lineage: roots are lettered in order, each variant
 // numbered under its root ("A", "A1", "A2", ...). A variant's parent is
 // always a root, processed earlier, so its letter is already known.
-pub fn chunk_names(lineage: &[Option<usize>]) -> Vec<String> {
+pub fn word_names(lineage: &[Option<usize>]) -> Vec<String> {
     let mut names = Vec::with_capacity(lineage.len());
     let mut root_letter = vec![b'A'; lineage.len()];
     let mut variant_count = vec![0usize; lineage.len()];
@@ -233,7 +233,7 @@ pub fn board(
     (in_key, accidentals)
 }
 
-pub fn initial_chunk() -> Word {
+pub fn initial_word() -> Word {
     Word::new(vec![
         Slot::Note(DegreeReference::natural(1, 0)),
         Slot::Note(DegreeReference::new(
@@ -245,7 +245,7 @@ pub fn initial_chunk() -> Word {
     ])
 }
 
-pub fn second_chunk() -> Word {
+pub fn second_word() -> Word {
     Word::new(vec![
         Slot::Note(DegreeReference::natural(1, 0)),
         Slot::Note(DegreeReference::natural(5, 0)),
@@ -258,7 +258,7 @@ pub fn second_chunk() -> Word {
 // pair; then a quarter, a sixteenth and a dotted eighth, and two silent
 // beats. Placeholder content; the demo needs the values, beams, flags,
 // dots, and rests, not any particular pitches.
-pub fn phrase_chunk() -> Word {
+pub fn phrase_word() -> Word {
     let note = |degree: i32| Slot::Note(DegreeReference::natural(degree, 0));
     Word::new(vec![
         // Bar 1: O--- | O-O- | OOO- | O-OO.
@@ -298,13 +298,13 @@ pub fn phrase_chunk() -> Word {
     ])
 }
 
-// Every fingering of the chunk over one chord root, ranked by reach distance
+// Every fingering of the word over one chord root, ranked by reach distance
 // from [anchor] with consecutive moves within [fret_cap] frets, plus the
-// slot-to-note index map (None for rests) that aligns the chunk's slots with
+// slot-to-note index map (None for rests) that aligns the word's slots with
 // the fingering rows.
-// The chunk's notes and the slot-to-note alignment (None for rests).
-fn notes_of(chunk: &Word, root_degree: i32) -> (Vec<DegreeReference>, Vec<Option<usize>>) {
-    let reframed = &chunk::apply_progression(chunk, &[root_degree])[0];
+// The word's notes and the slot-to-note alignment (None for rests).
+fn notes_of(word: &Word, root_degree: i32) -> (Vec<DegreeReference>, Vec<Option<usize>>) {
+    let reframed = &word::apply_progression(word, &[root_degree])[0];
     let mut slot_notes: Vec<Option<usize>> = vec![None; reframed.len()];
     let mut notes = Vec::new();
     for (i, slot) in reframed.iter().enumerate() {
@@ -320,29 +320,29 @@ pub fn solve(
     instrument: &Instrument,
     key: Key,
     mode: Mode,
-    chunk: &Word,
+    word: &Word,
     root_degree: i32,
     anchor: FretboardPosition,
     fret_cap: i32,
 ) -> (Vec<Fingering>, Vec<Option<usize>>) {
-    let (notes, slot_notes) = notes_of(chunk, root_degree);
-    let fingerings = chunk_solver::positions(key, mode, instrument, anchor, fret_cap, &notes);
+    let (notes, slot_notes) = notes_of(word, root_degree);
+    let fingerings = word_solver::positions(key, mode, instrument, anchor, fret_cap, &notes);
     (fingerings, slot_notes)
 }
 
-// Every fingering of the chunk whose first note is played exactly at
+// Every fingering of the word whose first note is played exactly at
 // [first] — the rotation catalog around a pinned root note.
 pub fn solve_pinned(
     instrument: &Instrument,
     key: Key,
     mode: Mode,
-    chunk: &Word,
+    word: &Word,
     root_degree: i32,
     first: FretboardPosition,
     fret_cap: i32,
 ) -> (Vec<Fingering>, Vec<Option<usize>>) {
-    let (notes, slot_notes) = notes_of(chunk, root_degree);
-    let fingerings = chunk_solver::positions_from(key, mode, instrument, first, fret_cap, &notes);
+    let (notes, slot_notes) = notes_of(word, root_degree);
+    let fingerings = word_solver::positions_from(key, mode, instrument, first, fret_cap, &notes);
     (fingerings, slot_notes)
 }
 
@@ -365,18 +365,18 @@ mod tests {
     }
 
     #[test]
-    fn chunk_names_letter_roots_and_number_variants_under_their_root() {
+    fn word_names_letter_roots_and_number_variants_under_their_root() {
         let lineage = [None, Some(0), Some(0), None, Some(3)];
         assert_eq!(
-            chunk_names(&lineage),
+            word_names(&lineage),
             vec!["A", "A1", "A2", "B", "B1"],
             "roots lettered in order, variants numbered under their root"
         );
-        assert_eq!(chunk_names(&[None, None]), vec!["A", "B"]);
+        assert_eq!(word_names(&[None, None]), vec!["A", "B"]);
     }
 
     #[test]
-    fn degree_note_in_register_names_the_register_the_chunk_sits_in() {
+    fn degree_note_in_register_names_the_register_the_word_sits_in() {
         let key = key_of(TONICS[0], Quality::Major);
         let note = degree_note_in_register(key, Mode::Ionian, 2, DegreeReference::natural(3, 0));
         assert_eq!(note.to_string(), "E2");

@@ -29,7 +29,7 @@ pub struct Highlight {
 pub struct BoardState {
     dots: Vec<Dot>,
     // Off-key positions resolved to their spelled degrees — drawn as faint
-    // hollow rings until the chunk plays them, then labeled.
+    // hollow rings until the word plays them, then labeled.
     accidentals: Vec<Dot>,
     string_count: usize,
     max_fret: i32,

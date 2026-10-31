@@ -40,12 +40,12 @@ impl TabScreen {
     }
 
     pub fn refresh(&mut self, session: &Session, document: &Document, settings: &Settings) {
-        let chunk = &document.chunks[document.selected_chunk];
+        let word = &document.words[document.selected_word];
         let (solved, slot_notes) = model::solve(
             &session.instrument,
             session.key(),
             session.mode(),
-            chunk,
+            word,
             model::PROGRESSION[self.chord_index],
             model::SOLVER_ANCHOR,
             settings.solver_fret_cap,
@@ -132,7 +132,7 @@ pub fn view<'a>(
     board: &'a BoardState,
     settings: &'a Settings,
 ) -> Element<'a, Message> {
-    let chunk = &document.chunks[document.selected_chunk];
+    let word = &document.words[document.selected_word];
     let fingering = screen
         .solved
         .get(screen.fingering_index)
@@ -158,7 +158,7 @@ pub fn view<'a>(
     let open_notes = (0..string_count)
         .map(|string_index| tuning::open_note(&session.instrument.tuning, string_index).to_string())
         .collect();
-    let columns = padded_columns(chunk.len(), COLUMNS_PER_BAR);
+    let columns = padded_columns(word.len(), COLUMNS_PER_BAR);
     let mut rests: Vec<bool> = screen
         .slot_notes
         .iter()

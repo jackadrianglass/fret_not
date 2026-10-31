@@ -71,8 +71,9 @@ no guaranteed musical-symbol coverage, and a missing glyph paints as tofu.
   onto it along the slant — each arc emerges from the bottom of its ball and
   sweeps out to its corner on the leg. One hook is the eighth rest, two the
   sixteenth, three the 32nd.
-- **Quarter rest**: the squiggle — down-left from the top, across to the
-  right, down to a small up-left hook at the bottom.
+- **Quarter rest**: a filled closed bezier outline (no stroke) — a sharp tip
+  at the top, an S-shaped body with width, and a curl at the bottom whose
+  inner edge forms the hook's counterform.
 - **Dot**: to the right of the notehead, raised into the space above the
   line (the notehead sits on the one-line staff), clear of the stem.
 

@@ -600,29 +600,33 @@ impl TabCanvas {
         }
     }
 
-    // The quarter rest: the squiggle — a zigzag curling down-left from the
-    // top, across to the right, and down to a small hook at the bottom.
+    // The quarter rest: a solid glyph — the classic outline as one closed
+    // bezier path, filled whole. Every point is a fraction of the glyph
+    // height off (x, rhythm_y), the outline normalized to span -0.5..0.5.
     fn draw_quarter_rest(&self, frame: &mut canvas::Frame, g: &Geometry, c: &TabColors, x: f32) {
         let height = self.scaled(REST_HEIGHT + REST_HOOK_EXTRA);
-        let top = g.rhythm_y - height * 0.55;
-        let bottom = g.rhythm_y + height * 0.45;
-        let squiggle = canvas::Path::new(|builder| {
-            builder.move_to(Point::new(x + height * 0.11, top));
-            builder.line_to(Point::new(x - height * 0.12, top + height * 0.38));
-            builder.line_to(Point::new(x + height * 0.14, top + height * 0.68));
-            builder.line_to(Point::new(x - height * 0.06, bottom));
-            // The bottom hook curls up-left.
-            builder.quadratic_curve_to(
-                Point::new(x + height * 0.02, bottom + height * 0.07),
-                Point::new(x - height * 0.2, bottom - height * 0.06),
+        let glyph = canvas::Path::new(|builder| {
+            let p = |dx: f32, dy: f32| Point::new(x + height * dx, g.rhythm_y + height * dy);
+            builder.move_to(p(0.1429, -0.246));
+            builder.bezier_curve_to(p(0.1429, -0.1825), p(0.0159, -0.0873), p(0.0159, 0.0397));
+            builder.bezier_curve_to(p(0.0159, 0.0873), p(0.1111, 0.2302), p(0.1746, 0.3095));
+            builder.bezier_curve_to(p(0.1429, 0.2937), p(0.1111, 0.2778), p(0.0635, 0.2778));
+            builder.bezier_curve_to(p(-0.0317, 0.2778), p(-0.0635, 0.3571), p(-0.0635, 0.4048));
+            builder.bezier_curve_to(p(-0.0635, 0.4365), p(-0.0317, 0.4683), p(-0.0159, 0.5));
+            builder.bezier_curve_to(p(-0.1111, 0.4365), p(-0.1746, 0.373), p(-0.1746, 0.3095));
+            builder.bezier_curve_to(p(-0.1746, 0.1508), p(-0.0662, 0.2063), p(0.0132, 0.1746));
+            builder.bezier_curve_to(p(-0.0662, 0.0952), p(-0.1429, -0.0238), p(-0.1429, -0.0714));
+            builder.bezier_curve_to(
+                p(-0.1429, -0.1032),
+                p(-0.0476, -0.2143),
+                p(-0.0159, -0.2937),
             );
+            builder.line_to(p(-0.0159, -0.3413));
+            builder.bezier_curve_to(p(-0.0159, -0.3889), p(-0.0476, -0.4524), p(-0.0635, -0.5));
+            builder.bezier_curve_to(p(0.0, -0.4206), p(0.1429, -0.2778), p(0.1429, -0.246));
+            builder.close();
         });
-        frame.stroke(
-            &squiggle,
-            canvas::Stroke::default()
-                .with_color(c.fret_number)
-                .with_width(1.2),
-        );
+        frame.fill(&glyph, c.fret_number);
     }
 
     // The fret numbers, centered on their string line in their column. The

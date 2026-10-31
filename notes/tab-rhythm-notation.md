@@ -49,8 +49,8 @@ Per beat (`beat_beams`), standard metric rules:
 
 ## Rests
 
-- Hooks = the rest's beam level (1 hook = eighth rest, 2 = sixteenth rest);
-  a dotted rest adds a dot to the right of the glyph.
+- Hooks = the rest's beam level (1 hook = eighth rest, 2 = sixteenth,
+  3 = 32nd); a dotted rest adds a dot to the right of the glyph.
 - A rest filling the beat (`value == slots_per_beat`) is the **quarter
   rest**: drawn as its squiggle (`draw_quarter_rest`), not the hook family.
 
@@ -66,11 +66,11 @@ no guaranteed musical-symbol coverage, and a missing glyph paints as tofu.
   (`notehead_extent` = the rotated ellipse's horizontal reach).
 - **Flag**: a quadratic hook off the stem, concave toward the notehead,
   stacked one per beam level (`FLAG_GAP` apart).
-- **Rest (eighth/sixteenth family)**: two arcs — a more horizontal one
-  emerging from the bottom of the ball at the top left and sweeping out to
-  the top right, and a more vertical one running straight from the top right
-  down to the bottom; the sixteenth rest repeats the vertical stroke in
-  parallel.
+- **Rest (eighth/sixteenth family)**: a near-vertical leg from the top
+  right down to the bottom, with one ball-and-arc unit per beam level hooked
+  onto it along the slant — each arc emerges from the bottom of its ball and
+  sweeps out to its corner on the leg. One hook is the eighth rest, two the
+  sixteenth, three the 32nd.
 - **Quarter rest**: the squiggle — down-left from the top, across to the
   right, down to a small up-left hook at the bottom.
 - **Dot**: to the right of the notehead, raised into the space above the

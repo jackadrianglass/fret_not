@@ -517,11 +517,11 @@ impl TabCanvas {
         }
     }
 
-    // The rest glyph: a ball at the upper left with a horizontal arc
-    // emerging from its bottom and sweeping out to the upper right, and a
-    // near-vertical leg dropping from there to the bottom — one leg for an
-    // eighth rest, a parallel second for a sixteenth — plus a dot per extra
-    // slot on a dotted rest. A rest filling the beat is the
+    // The rest glyph: a near-vertical leg from the top right down to the
+    // bottom, with one ball-and-arc unit per beam level hooked onto it
+    // along its slant — one hook for an eighth rest, two for a sixteenth,
+    // three for a 32nd — plus a dot per extra slot on a dotted rest. A rest
+    // filling the beat is the
     // quarter rest, drawn as its squiggle. Drawn rather than a font glyph —
     // the default font is a platform sans-serif with no guaranteed
     // musical-symbol coverage, and a missing glyph paints as tofu.
@@ -541,25 +541,42 @@ impl TabCanvas {
         let hooks = beams(event.value, slots_per_beat);
         let height = self.scaled(REST_HEIGHT + (hooks.saturating_sub(1)) as f32 * REST_HOOK_EXTRA);
         let ball_radius = self.scaled(REST_BALL);
-        let ball = Point::new(x - height * 0.18, g.rhythm_y - height * 0.6);
-        frame.fill(&canvas::Path::circle(ball, ball_radius), c.fret_number);
-        // Two arcs: a horizontal one sweeping from the corner at the upper
-        // right back into the bottom of the ball, and a near-vertical leg
-        // dropping straight from the corner to the bottom. Extra hooks
-        // repeat the leg, parallel, for the sixteenth.
-        let corner = Point::new(x + height * 0.45, g.rhythm_y - height * 0.55);
-        let point = Point::new(ball.x + ball_radius * 0.25, ball.y + ball_radius * 0.95);
-        let sweep = canvas::Path::new(|builder| {
-            builder.move_to(corner);
-            builder.quadratic_curve_to(
-                Point::new(x + height * 0.2, g.rhythm_y - height * 0.3),
-                point,
+        // Each hook is a ball-and-arc unit stacked down along the leg's
+        // slant — one hook is the eighth rest, two the sixteenth, three the
+        // 32nd — and the leg itself is drawn once, from the top hook's
+        // corner.
+        let base_ball = Point::new(x - height * 0.18, g.rhythm_y - height * 0.6);
+        let base_corner = Point::new(x + height * 0.45, g.rhythm_y - height * 0.55);
+        let stack =
+            |hook: usize| Point::new(hook as f32 * height * -0.09, hook as f32 * height * 0.29);
+        for hook in 0..hooks {
+            let offset = stack(hook);
+            frame.fill(
+                &canvas::Path::circle(
+                    Point::new(base_ball.x + offset.x, base_ball.y + offset.y),
+                    ball_radius,
+                ),
+                c.fret_number,
             );
+        }
+        let sweep = canvas::Path::new(|builder| {
             for hook in 0..hooks {
-                let start = Point::new(corner.x, corner.y + hook as f32 * height * 0.18);
-                builder.move_to(start);
-                builder.line_to(Point::new(start.x - height * 0.35, start.y + height * 1.15));
+                let offset = stack(hook);
+                let ball = Point::new(base_ball.x + offset.x, base_ball.y + offset.y);
+                let corner = Point::new(base_corner.x + offset.x, base_corner.y + offset.y);
+                // The arc sweeps from the hook's corner on the leg back into
+                // the bottom of its ball.
+                builder.move_to(corner);
+                builder.quadratic_curve_to(
+                    Point::new(
+                        x + height * 0.2 + offset.x,
+                        g.rhythm_y - height * 0.3 + offset.y,
+                    ),
+                    Point::new(ball.x + ball_radius * 0.25, ball.y + ball_radius * 0.95),
+                );
             }
+            builder.move_to(base_corner);
+            builder.line_to(Point::new(x + height * 0.1, g.rhythm_y + height * 0.6));
         });
         frame.stroke(
             &sweep,

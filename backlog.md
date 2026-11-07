@@ -20,7 +20,7 @@ Right now, we have a super basic grid kind of editor. Wanna see how that might c
 - [x] Have a way to insert notes between others
 - [x] Rename word to word and sequence to phrase
 - [ ] Have a variant list view
-- [ ] word persistence
+- [x] word persistence
 
 Okay so now we're making the variants. It's basically copying the row and altering it.
 - How to manage if the original word changes? Defer for now

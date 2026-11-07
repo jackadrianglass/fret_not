@@ -1,5 +1,5 @@
-use iced::widget::{button, canvas, column, container, row, scrollable, text};
-use iced::{Alignment, Element, Fill};
+use iced::widget::{canvas, column, container, scrollable};
+use iced::{Element, Fill};
 
 use fretboard::fingering::Fingering;
 use fretboard::tuning;
@@ -13,7 +13,6 @@ use crate::{Document, Session, Settings};
 const COLUMNS_PER_BAR: usize = 16;
 
 pub struct TabScreen {
-    chord_index: usize,
     fingering_index: usize,
     solved: Vec<Fingering>,
     slot_notes: Vec<Option<usize>>,
@@ -23,16 +22,11 @@ pub struct TabScreen {
 pub enum Message {
     Board(board::Event),
     TabCanvas(tab_canvas::Event),
-    FingeringPrev,
-    FingeringNext,
-    ChordPrev,
-    ChordNext,
 }
 
 impl TabScreen {
     pub fn new() -> TabScreen {
         TabScreen {
-            chord_index: 0,
             fingering_index: 0,
             solved: Vec::new(),
             slot_notes: Vec::new(),
@@ -46,7 +40,7 @@ impl TabScreen {
             session.key(),
             session.mode(),
             word,
-            model::PROGRESSION[self.chord_index],
+            1,
             model::SOLVER_ANCHOR,
             settings.solver_fret_cap,
         );
@@ -55,8 +49,7 @@ impl TabScreen {
         self.fingering_index = 0;
     }
 
-    // True when the chord changed and the cached fingerings are stale.
-    pub fn update(&mut self, message: Message) -> bool {
+    pub fn update(&mut self, message: Message) {
         match message {
             Message::Board(board::Event::Clicked(position)) => {
                 if let Some(index) = self
@@ -66,32 +59,8 @@ impl TabScreen {
                 {
                     self.fingering_index = index;
                 }
-                false
             }
-            Message::TabCanvas(_) => false,
-            Message::FingeringPrev => {
-                let len = self.solved.len();
-                if len > 0 {
-                    self.fingering_index = (self.fingering_index + len - 1) % len;
-                }
-                false
-            }
-            Message::FingeringNext => {
-                let len = self.solved.len();
-                if len > 0 {
-                    self.fingering_index = (self.fingering_index + 1) % len;
-                }
-                false
-            }
-            Message::ChordPrev => {
-                self.chord_index =
-                    (self.chord_index + model::PROGRESSION.len() - 1) % model::PROGRESSION.len();
-                true
-            }
-            Message::ChordNext => {
-                self.chord_index = (self.chord_index + 1) % model::PROGRESSION.len();
-                true
-            }
+            Message::TabCanvas(_) => {}
         }
     }
 }
@@ -139,21 +108,6 @@ pub fn view<'a>(
         .cloned()
         .unwrap_or_default();
 
-    let controls = row![
-        button("prev").on_press(Message::FingeringPrev),
-        button("next").on_press(Message::FingeringNext),
-        text(format!(
-            "fingering {}/{}",
-            screen.fingering_index + 1,
-            screen.solved.len()
-        )),
-        button("< chord").on_press(Message::ChordPrev),
-        text(model::PROGRESSION_LABELS[screen.chord_index]),
-        button("chord >").on_press(Message::ChordNext),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center);
-
     let string_count = session.instrument.string_count();
     let open_notes = (0..string_count)
         .map(|string_index| tuning::open_note(&session.instrument.tuning, string_index).to_string())
@@ -194,7 +148,7 @@ pub fn view<'a>(
     )
     .height(260);
 
-    column![controls, tab_area, board_area]
+    column![tab_area, board_area]
         .spacing(12)
         .height(Fill)
         .width(Fill)

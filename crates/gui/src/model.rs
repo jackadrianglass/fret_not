@@ -14,8 +14,6 @@ use relative::mode::Mode;
 use relative::scale_degree::ScaleDegree;
 use relative::word::{self, Slot, Word};
 
-pub const PROGRESSION: [i32; 3] = [1, 4, 5];
-pub const PROGRESSION_LABELS: [&str; 3] = ["I", "IV", "V"];
 pub const MAX_SLOTS: usize = 12;
 
 // The solver's exploration window: fingerings must stay within the fret cap

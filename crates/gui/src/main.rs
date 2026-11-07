@@ -358,10 +358,7 @@ fn update(state: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::Tab(message) => {
-            if state.screens.tab.update(message) {
-                state.refresh_document();
-                return state.save_document();
-            }
+            state.screens.tab.update(message);
             Task::none()
         }
         Message::Phrase(message) => {

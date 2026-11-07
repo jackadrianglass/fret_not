@@ -3,6 +3,8 @@
 {
   packages = [
       pkgs.git
+      pkgs.just
+      pkgs.nushell
   ];
 
   languages.rust = {

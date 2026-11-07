@@ -44,10 +44,34 @@ const DOT_SPACING: f32 = 4.5;
 const FLAG_LENGTH: f32 = 9.0;
 const FLAG_DROP: f32 = 12.0;
 const FLAG_GAP: f32 = 5.0;
-const REST_HEIGHT: f32 = 14.0;
-const REST_HOOK_EXTRA: f32 = 5.0;
-const REST_BALL: f32 = 2.8;
+const REST_HEIGHT: f32 = 12.0;
+const REST_HOOK_EXTRA: f32 = 4.0;
+const REST_BALL: f32 = 2.4;
+// The quarter rest is drawn larger than the hook-family rests.
+const QUARTER_REST_HEIGHT: f32 = 23.0;
 const TIME_SIG_SIZE: f32 = 14.0;
+
+// The quarter rest outline, traced from a CC0 reference SVG (openclipart
+// "Quarter Rest"): cubic segments as absolute [control, control, end]
+// triples in SVG units; the last lands back on the move-to point.
+const QUARTER_REST_SVG: [[[f32; 2]; 3]; 12] = [
+    [[414.37, 472.09], [376.75, 500.31], [376.75, 537.94]],
+    [[376.75, 552.04], [404.96, 594.37], [423.78, 617.89]],
+    [[414.37, 613.18], [404.96, 608.48], [390.86, 608.48]],
+    [[362.64, 608.48], [353.23, 632.0], [353.23, 646.1]],
+    [[353.23, 655.51], [362.64, 664.92], [367.34, 674.32]],
+    [[339.12, 655.51], [320.31, 636.7], [320.31, 617.89]],
+    [[320.31, 570.86], [352.43, 587.32], [375.95, 577.91]],
+    [[352.43, 554.4], [329.72, 519.12], [329.72, 505.01]],
+    [[329.72, 495.61], [357.93, 462.69], [367.34, 439.17]],
+    [[367.34, 425.06], [367.34, 425.06], [367.34, 425.06]],
+    [[367.34, 410.95], [357.93, 392.14], [353.23, 378.03]],
+    [[372.04, 401.55], [414.37, 443.88], [414.37, 453.28]],
+];
+// The glyph's bounding box in SVG units, for centering and scaling.
+const QUARTER_REST_SVG_CX: f32 = 372.05;
+const QUARTER_REST_SVG_CY: f32 = 526.18;
+const QUARTER_REST_SVG_HEIGHT: f32 = 296.29;
 
 // The tab canvas is paint-only for now; the event type exists so the screen
 // can map the canvas into its own Message — the seam tab interaction will
@@ -600,30 +624,23 @@ impl TabCanvas {
         }
     }
 
-    // The quarter rest: a solid glyph — the classic outline as one closed
-    // bezier path, filled whole. Every point is a fraction of the glyph
-    // height off (x, rhythm_y), the outline normalized to span -0.5..0.5.
+    // The quarter rest: the reference outline (QUARTER_REST_SVG, traced from
+    // a CC0 SVG) scaled to the glyph height and centered on the column,
+    // straddling the rhythm line; filled whole, no stroke.
     fn draw_quarter_rest(&self, frame: &mut canvas::Frame, g: &Geometry, c: &TabColors, x: f32) {
-        let height = self.scaled(REST_HEIGHT + REST_HOOK_EXTRA);
+        let height = self.scaled(QUARTER_REST_HEIGHT);
+        let scale = height / QUARTER_REST_SVG_HEIGHT;
         let glyph = canvas::Path::new(|builder| {
-            let p = |dx: f32, dy: f32| Point::new(x + height * dx, g.rhythm_y + height * dy);
-            builder.move_to(p(0.1429, -0.246));
-            builder.bezier_curve_to(p(0.1429, -0.1825), p(0.0159, -0.0873), p(0.0159, 0.0397));
-            builder.bezier_curve_to(p(0.0159, 0.0873), p(0.1111, 0.2302), p(0.1746, 0.3095));
-            builder.bezier_curve_to(p(0.1429, 0.2937), p(0.1111, 0.2778), p(0.0635, 0.2778));
-            builder.bezier_curve_to(p(-0.0317, 0.2778), p(-0.0635, 0.3571), p(-0.0635, 0.4048));
-            builder.bezier_curve_to(p(-0.0635, 0.4365), p(-0.0317, 0.4683), p(-0.0159, 0.5));
-            builder.bezier_curve_to(p(-0.1111, 0.4365), p(-0.1746, 0.373), p(-0.1746, 0.3095));
-            builder.bezier_curve_to(p(-0.1746, 0.1508), p(-0.0662, 0.2063), p(0.0132, 0.1746));
-            builder.bezier_curve_to(p(-0.0662, 0.0952), p(-0.1429, -0.0238), p(-0.1429, -0.0714));
-            builder.bezier_curve_to(
-                p(-0.1429, -0.1032),
-                p(-0.0476, -0.2143),
-                p(-0.0159, -0.2937),
-            );
-            builder.line_to(p(-0.0159, -0.3413));
-            builder.bezier_curve_to(p(-0.0159, -0.3889), p(-0.0476, -0.4524), p(-0.0635, -0.5));
-            builder.bezier_curve_to(p(0.0, -0.4206), p(0.1429, -0.2778), p(0.1429, -0.246));
+            let p = |sx: f32, sy: f32| {
+                Point::new(
+                    x + (sx - QUARTER_REST_SVG_CX) * scale,
+                    g.rhythm_y + (sy - QUARTER_REST_SVG_CY) * scale,
+                )
+            };
+            builder.move_to(p(414.37, 453.28));
+            for [c1, c2, end] in QUARTER_REST_SVG {
+                builder.bezier_curve_to(p(c1[0], c1[1]), p(c2[0], c2[1]), p(end[0], end[1]));
+            }
             builder.close();
         });
         frame.fill(&glyph, c.fret_number);

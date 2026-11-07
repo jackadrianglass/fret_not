@@ -52,7 +52,8 @@ Per beat (`beat_beams`), standard metric rules:
 - Hooks = the rest's beam level (1 hook = eighth rest, 2 = sixteenth,
   3 = 32nd); a dotted rest adds a dot to the right of the glyph.
 - A rest filling the beat (`value == slots_per_beat`) is the **quarter
-  rest**: drawn as its squiggle (`draw_quarter_rest`), not the hook family.
+  rest** (`draw_quarter_rest`), drawn larger than the hook family, not part
+  of it.
 
 ## Glyphs (all line-drawn)
 
@@ -71,9 +72,10 @@ no guaranteed musical-symbol coverage, and a missing glyph paints as tofu.
   onto it along the slant — each arc emerges from the bottom of its ball and
   sweeps out to its corner on the leg. One hook is the eighth rest, two the
   sixteenth, three the 32nd.
-- **Quarter rest**: a filled closed bezier outline (no stroke) — a sharp tip
-  at the top, an S-shaped body with width, and a curl at the bottom whose
-  inner edge forms the hook's counterform.
+- **Quarter rest**: the outline of a CC0 reference glyph (openclipart "Quarter
+  Rest"), stored as absolute bezier segments (`QUARTER_REST_SVG` in
+  `tab_canvas.rs`) and mapped onto the staff scaled to the glyph height and
+  centered on the column; filled whole, no stroke.
 - **Dot**: to the right of the notehead, raised into the space above the
   line (the notehead sits on the one-line staff), clear of the stem.
 
